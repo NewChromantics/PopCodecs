@@ -20,9 +20,16 @@ namespace PopX
 		public static int Get32(byte a, byte b, byte c, byte d) { return PopX.Atom.Get32(a, b, c,d); }
 		public static int Get64(byte a, byte b, byte c, byte d, byte e, byte f, byte g, byte h) { return PopX.Atom.Get64(a, b, c,d,e,f,g,h); }
 
-		public static int Get16(byte[] Data, int StartIndex) { return Get16(Data[StartIndex + 0], Data[StartIndex + 1]); }
-		public static int Get24(byte[] Data, int StartIndex) { return Get24(Data[StartIndex + 0], Data[StartIndex + 1], Data[StartIndex + 2]); }
-		public static int Get32(byte[] Data, int StartIndex) { return Get32(Data[StartIndex + 0], Data[StartIndex + 1], Data[StartIndex + 2], Data[StartIndex + 3]); }
+		public static int Get16(byte[] Data, ref int StartIndex) { var v = Get16(Data[StartIndex + 0], Data[StartIndex + 1]);	StartIndex += 2;	return v; }
+		public static int Get24(byte[] Data, ref int StartIndex) { var v = Get24(Data[StartIndex + 0], Data[StartIndex + 1], Data[StartIndex + 2]);	StartIndex += 3;	return v; }
+		public static int Get32(byte[] Data, ref int StartIndex) { var v = Get32(Data[StartIndex + 0], Data[StartIndex + 1], Data[StartIndex + 2], Data[StartIndex + 3]); StartIndex += 4; return v; }
+
+		public static byte[] Get8x4(byte[] Data, ref int StartIndex)
+		{
+			var abcd = new byte[4] { Data[StartIndex + 0], Data[StartIndex + 1], Data[StartIndex + 2], Data[StartIndex + 3] };
+			StartIndex += 4;
+			return abcd;
+		}
 
 
 
@@ -48,6 +55,7 @@ namespace PopX
 		public class TTrack
 		{
 			public List<TSample> Samples;
+			public List<TTrackSampleDescription> SampleDescriptions;
 
 			public TTrack()
 			{
@@ -324,13 +332,14 @@ namespace PopX
 			var AtomData = FileData.SubArray(Atom.FileOffset, Atom.DataSize);
 
 			var Version = AtomData[8];
-			var Flags = Get24(AtomData, 9);
-			var CreationTime = Get32(AtomData, 12);
-			var ModificationTime = Get32(AtomData, 16);
-			var TimeScale = Get32(AtomData, 20);
-			var Duration = Get32(AtomData, 24);
-			var Language = Get16(AtomData, 28);
-			var Quality = Get16(AtomData, 30);
+			var Offset = 9;
+			var Flags = Get24(AtomData, ref Offset);
+			var CreationTime = Get32(AtomData, ref Offset);
+			var ModificationTime = Get32(AtomData, ref Offset);
+			var TimeScale = Get32(AtomData, ref Offset);
+			var Duration = Get32(AtomData, ref Offset);
+			var Language = Get16(AtomData, ref Offset);
+			var Quality = Get16(AtomData, ref Offset);
 
 			var Header = new TMediaHeader();
 			Header.TimeScale = 1.0f / (float)TimeScale; //	timescale is time units per second
@@ -350,22 +359,23 @@ namespace PopX
 
 			//	https://developer.apple.com/library/content/documentation/QuickTime/QTFF/art/qt_l_095.gif
 			var Version = AtomData[8];
-			var Flags = Get24(AtomData,9);
-			var CreationTime = Get32(AtomData,12);
-			var ModificationTime = Get32(AtomData,16);
-			var TimeScale = Get32(AtomData,20);
-			var Duration = Get32(AtomData,24);
-			var PreferredRate = Get32(AtomData,28);
-			var PreferredVolume = Get16(AtomData,32);
-			var Reserved = AtomData.SubArray(34, 10);
-			var Matrix = AtomData.SubArray(44, 36);
-			var PreviewTime = Get32(AtomData,80);
-			var PreviewDuration = Get32(AtomData,84);
-			var PosterTime = Get32(AtomData,88);
-			var SelectionTime = Get32(AtomData,92);
-			var SelectionDuration = Get32(AtomData,96);
-			var CurrentTime = Get32(AtomData,100);
-			var NextTrackId = Get32(AtomData,104);
+			var Offset = 9;
+			var Flags = Get24(AtomData,ref Offset);
+			var CreationTime = Get32(AtomData,ref Offset);
+			var ModificationTime = Get32(AtomData,ref Offset);
+			var TimeScale = Get32(AtomData,ref Offset);
+			var Duration = Get32(AtomData,ref Offset);
+			var PreferredRate = Get32(AtomData,ref Offset);
+			var PreferredVolume = Get16(AtomData,ref Offset);
+			var Reserved = AtomData.SubArray(Offset, 10);	Offset += 10;
+			var Matrix = AtomData.SubArray(Offset, 36); Offset += 36;
+			var PreviewTime = Get32(AtomData,ref Offset);
+			var PreviewDuration = Get32(AtomData,ref Offset);
+			var PosterTime = Get32(AtomData,ref Offset);
+			var SelectionTime = Get32(AtomData,ref Offset);
+			var SelectionDuration = Get32(AtomData,ref Offset);
+			var CurrentTime = Get32(AtomData,ref Offset);
+			var NextTrackId = Get32(AtomData,ref Offset);
 
 			foreach (var Zero in Reserved)
 				if (Zero != 0)
@@ -627,20 +637,54 @@ namespace PopX
 			return Samples;
 		}
 
-		struct TrackSampleDescription
+		public struct TTrackSampleDescription
 		{
-			
-		}
+			public string Fourcc;   //	gr: this is 4 bytes, but might not actually be a fourcc?
+			public int DataReferenceIndex;
+			public byte[] Data;		//	codec specific data
+		};
 
-		static TrackSampleDescription GetTrackSampleDescription(TAtom stsd, byte[] FileData)
+		static List<TTrackSampleDescription> GetTrackSampleDescriptions(TAtom Atom, byte[] FileData)
 		{
-			return new TrackSampleDescription();
+			var Sizes = new List<long>();
+			var AtomData = FileData.SubArray(Atom.FileOffset, Atom.DataSize);
+
+			//	https://developer.apple.com/library/content/documentation/QuickTime/QTFF/art/qt_l_095.gif
+			var Version = AtomData[8];
+			var Offset = 9;
+			var Flags = Get24(AtomData, ref Offset);
+			var EntryCount = Get32(AtomData, ref Offset);
+
+			var SampleDescriptions = new List<TTrackSampleDescription>();
+
+			for (int sd = 0; sd < EntryCount;	sd++ )
+			{
+				var OffsetStart = Offset;
+				var Size = Get32(AtomData, ref Offset);
+				var Format = Get8x4(AtomData, ref Offset);
+				var Reserved = AtomData.SubArray(Offset, 6);
+				Offset += 6;
+				var DataReferenceIndex = Get16(AtomData, ref Offset);
+
+				//	read the remaining data
+				var HeaderSize = (Offset - OffsetStart);
+				var DataSize = Size - HeaderSize;
+				var Data = AtomData.SubArray(Offset, DataSize);
+				Offset += DataSize;
+
+				var SampleDescription = new TTrackSampleDescription();
+				SampleDescription.DataReferenceIndex = DataReferenceIndex;
+				SampleDescription.Data = Data;
+				SampleDescription.Fourcc = Encoding.ASCII.GetString(Format);
+				SampleDescriptions.Add(SampleDescription);
+			}
+			return SampleDescriptions;
 		}
 
 		static void DecodeAtom_Track(ref TTrack Track,TAtom Trak,TAtom? MdatAtom,float MovieTimeScale,byte[] FileData)
 		{
 			List<TSample> TrackSamples = null;
-			TrackSampleDescription? TrackDescription = null;
+			List<TTrackSampleDescription> TrackSampleDescriptions = null;
 			TMediaHeader? MediaHeader = null;
 
 			System.Action<TAtom> EnumMinfAtom = (Atom) =>
@@ -653,7 +697,7 @@ namespace PopX
 
 					var SampleDescriptionAtom = PopX.Atom.GetChildAtom(Atom, "stsd", FileData);
 					if (SampleDescriptionAtom != null)
-						TrackDescription = GetTrackSampleDescription(SampleDescriptionAtom.Value,FileData);
+						TrackSampleDescriptions = GetTrackSampleDescriptions(SampleDescriptionAtom.Value,FileData);
 				}
 			};
 			System.Action<TAtom> EnumMdiaAtom = (Atom) =>
@@ -674,6 +718,7 @@ namespace PopX
 			//	go through the track
 			PopX.Atom.DecodeAtomChildren(EnumTrakChild, Trak, FileData);
 
+			Track.SampleDescriptions = TrackSampleDescriptions;
 			Track.Samples = TrackSamples;
 		}
 
