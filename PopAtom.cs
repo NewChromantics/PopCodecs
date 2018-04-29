@@ -45,6 +45,13 @@ namespace PopX
 
 	public static class Atom
 	{
+		public static int Get16(byte a, byte b)
+		{
+			int sz = b << 0;
+			sz += a << 8;
+			return sz;
+		}
+
 		public static int Get24(byte a, byte b, byte c)
 		{
 			int sz = c << 0;

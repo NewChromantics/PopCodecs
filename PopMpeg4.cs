@@ -15,9 +15,15 @@ namespace PopX
 {
 	public static class Mpeg4
 	{
+		public static int Get16(byte a, byte b) { return PopX.Atom.Get16(a, b); }
 		public static int Get24(byte a, byte b, byte c) { return PopX.Atom.Get24(a, b, c); }
 		public static int Get32(byte a, byte b, byte c, byte d) { return PopX.Atom.Get32(a, b, c,d); }
 		public static int Get64(byte a, byte b, byte c, byte d, byte e, byte f, byte g, byte h) { return PopX.Atom.Get64(a, b, c,d,e,f,g,h); }
+
+		public static int Get16(byte[] Data, int StartIndex) { return Get16(Data[StartIndex + 0], Data[StartIndex + 1]); }
+		public static int Get24(byte[] Data, int StartIndex) { return Get24(Data[StartIndex + 0], Data[StartIndex + 1], Data[StartIndex + 2]); }
+		public static int Get32(byte[] Data, int StartIndex) { return Get32(Data[StartIndex + 0], Data[StartIndex + 1], Data[StartIndex + 2], Data[StartIndex + 3]); }
+
 
 
 		//	known mpeg4 atoms
@@ -34,9 +40,9 @@ namespace PopX
 			public long DataPosition;
 			public long DataSize;
 			public bool Keyframe;	
-			public int DecodeTime;  //	todo: change to explicitly ms, currently is whatever value
-			public int PresentationTime;  //	todo: change to explicitly ms, currently is whatever value
-			public int Duration;  //	todo: change to explicitly ms, currently is whatever value
+			public int DecodeTimeMs;
+			public int PresentationTimeMs;
+			public int DurationMs;
 		};
 		//	class to make it easier to pass around data
 		public class TTrack
@@ -63,6 +69,37 @@ namespace PopX
 				SampleDescriptionId = Atom.Get32(Data[Offset + 8], Data[Offset + 9], Data[Offset + 10], Data[Offset + 11]);
 			}
 		};
+
+		public struct TMovieHeader
+		{
+			public float		TimeScale;	//	to convert from internal units to seconds
+			public Matrix4x4	VideoTransform;
+			public TimeSpan		Duration;
+			public DateTime		CreationTime;
+			public DateTime		ModificationTime;
+			public float		PreviewDuration;
+		};
+
+
+		public struct TMediaHeader
+		{
+			public float TimeScale; //	to convert from internal units to seconds
+			public Matrix4x4 VideoTransform;
+			public TimeSpan Duration;
+			public DateTime CreationTime;
+			public DateTime ModificationTime;
+			public int LanguageId;	//	todo: convert to proper c# language id
+			public float Quality;	//	originally 16 bit
+		};
+
+
+		static public System.DateTime GetDateTimeFromSecondsSinceMidnightJan1st1904(int Seconds)
+		{
+			//	todo: check this
+			var Epoch = new DateTime(1904, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+			Epoch.AddSeconds(Seconds);
+			return Epoch;
+		}
 
 		static List<ChunkMeta> GetChunkMetas(TAtom Atom, byte[] FileData)
 		{
@@ -273,6 +310,96 @@ namespace PopX
 			return Sizes;
 		}
 
+		static byte[] SubArray(this Array ParentArray,long Start,long Count)
+		{
+			var ChildArray = new byte[Count];
+			Array.Copy( ParentArray, Start, ChildArray, 0, Count);
+			return ChildArray;
+		}
+
+
+
+		static TMediaHeader DecodeAtom_MediaHeader(TAtom Atom, byte[] FileData)
+		{
+			var AtomData = FileData.SubArray(Atom.FileOffset, Atom.DataSize);
+
+			var Version = AtomData[8];
+			var Flags = Get24(AtomData, 9);
+			var CreationTime = Get32(AtomData, 12);
+			var ModificationTime = Get32(AtomData, 16);
+			var TimeScale = Get32(AtomData, 20);
+			var Duration = Get32(AtomData, 24);
+			var Language = Get16(AtomData, 28);
+			var Quality = Get16(AtomData, 30);
+
+			var Header = new TMediaHeader();
+			Header.TimeScale = 1.0f / (float)TimeScale; //	timescale is time units per second
+			Header.Duration = new TimeSpan(0,0, (int)(Duration * Header.TimeScale));
+			Header.CreationTime = GetDateTimeFromSecondsSinceMidnightJan1st1904(CreationTime);
+			Header.ModificationTime = GetDateTimeFromSecondsSinceMidnightJan1st1904(ModificationTime);
+			Header.CreationTime = GetDateTimeFromSecondsSinceMidnightJan1st1904(CreationTime);
+			Header.LanguageId = Language;
+			Header.Quality = Quality / (float)(1 << 16);
+			return Header;
+		}
+
+		static TMovieHeader DecodeAtom_MovieHeader(TAtom Atom,byte[] FileData)
+		{
+			var Sizes = new List<long>();
+			var AtomData = FileData.SubArray(Atom.FileOffset, Atom.DataSize);
+
+			//	https://developer.apple.com/library/content/documentation/QuickTime/QTFF/art/qt_l_095.gif
+			var Version = AtomData[8];
+			var Flags = Get24(AtomData,9);
+			var CreationTime = Get32(AtomData,12);
+			var ModificationTime = Get32(AtomData,16);
+			var TimeScale = Get32(AtomData,20);
+			var Duration = Get32(AtomData,24);
+			var PreferredRate = Get32(AtomData,28);
+			var PreferredVolume = Get16(AtomData,32);
+			var Reserved = AtomData.SubArray(34, 10);
+			var Matrix = AtomData.SubArray(44, 36);
+			var PreviewTime = Get32(AtomData,80);
+			var PreviewDuration = Get32(AtomData,84);
+			var PosterTime = Get32(AtomData,88);
+			var SelectionTime = Get32(AtomData,92);
+			var SelectionDuration = Get32(AtomData,96);
+			var CurrentTime = Get32(AtomData,100);
+			var NextTrackId = Get32(AtomData,104);
+
+			foreach (var Zero in Reserved)
+				if (Zero != 0)
+					Debug.LogWarning("Reserved value " + Zero + " is not zero");
+
+			//	actually a 3x3 matrix, but we make it 4x4 for unity
+			//	gr: do we need to transpose this? docs don't say row or column major :/
+			//	wierd element labels, right? spec uses them.
+			var a = Matrix[0];
+			var b = Matrix[1];
+			var u = Matrix[2];
+			var c = Matrix[3];
+			var d = Matrix[4];
+			var v = Matrix[5];
+			var x = Matrix[6];
+			var y = Matrix[7];
+			var w = Matrix[8];
+			var MtxRow0 = new Vector4(a, b, u, 0);
+			var MtxRow1 = new Vector4(c, d, v, 0);
+			var MtxRow2 = new Vector4(x, y, w, 0);
+			var MtxRow3 = new Vector4(0, 0, 0, 1);
+
+			var Header = new TMovieHeader();
+			Header.TimeScale = 1.0f / (float)TimeScale; //	timescale is time units per second
+			Header.VideoTransform = new Matrix4x4(MtxRow0, MtxRow1, MtxRow2, MtxRow3);
+			Header.Duration = new TimeSpan(0,0,(int)(Duration * Header.TimeScale));
+			Header.CreationTime = GetDateTimeFromSecondsSinceMidnightJan1st1904(CreationTime);
+			Header.ModificationTime = GetDateTimeFromSecondsSinceMidnightJan1st1904(ModificationTime);
+			Header.CreationTime = GetDateTimeFromSecondsSinceMidnightJan1st1904(CreationTime);
+			Header.PreviewDuration = PreviewDuration * Header.TimeScale;
+			return Header;
+		}
+
+
 		static TAtom? GetNextAtom(byte[] Data, long Start)
 		{
 			//	no more data!
@@ -334,21 +461,32 @@ namespace PopX
 
 			//	decode moov (tracks, sample data etc)
 			List<TTrack> Tracks;
-			DecodeAtomMoov(out Tracks, moovAtom.Value, FileData);
+			TMovieHeader? Header;
+			DecodeAtom_Moov(out Tracks, out Header, moovAtom.Value, FileData);
 			foreach (var t in Tracks)
 				EnumTrack(t);
 		}
 
 
-		static void DecodeAtomMoov(out List<TTrack> Tracks,TAtom Moov, byte[] FileData)
+		static void DecodeAtom_Moov(out List<TTrack> Tracks,out TMovieHeader? MovieHeader,TAtom Moov, byte[] FileData)
 		{
 			var NewTracks = new List<TTrack>();
+
+			//	get header first
+			var MovieHeaderAtom = Atom.GetChildAtom(Moov, "mvhd", FileData);
+			if (MovieHeaderAtom != null)
+				MovieHeader = DecodeAtom_MovieHeader(MovieHeaderAtom.Value, FileData);
+			else
+				MovieHeader = null;
+
+			//	gotta be local to be used in lambda
+			var TimeScale = MovieHeader.HasValue ? MovieHeader.Value.TimeScale : 1;
 			System.Action<TAtom> EnumMoovChildAtom = (Atom) =>
 			{
 				if (Atom.Fourcc == "trak")
 				{
 					var Track = new TTrack();
-					DecodeAtom_Track( ref Track, Atom, null, FileData );
+					DecodeAtom_Track( ref Track, Atom, null, TimeScale, FileData );
 					NewTracks.Add(Track);
 				}
 			};
@@ -357,7 +495,7 @@ namespace PopX
 		}
 
 
-		static List<TSample> DecodeAtom_SampleTable(TAtom StblAtom, TAtom? MdatAtom, byte[] FileData)
+		static List<TSample> DecodeAtom_SampleTable(TAtom StblAtom, TAtom? MdatAtom,float TimeScale,byte[] FileData)
 		{
 			TAtom? ChunkOffsets32Atom = null;
 			TAtom? ChunkOffsets64Atom = null;
@@ -452,6 +590,14 @@ namespace PopX
 
 			var Samples = new List<TSample>();
 
+			System.Func<int,int> TimeToMs = (TimeUnit) =>
+			{
+				//	to float
+				var Timef = TimeUnit * TimeScale;
+				var TimeMs = Timef * 1000.0f;
+				return (int)TimeMs;
+			};
+
 			int SampleIndex = 0;
 			for (int i = 0; i < ChunkMetas.Count(); i++)
 			{
@@ -465,9 +611,9 @@ namespace PopX
 					Sample.DataPosition = ChunkOffset;
 					Sample.DataSize = SampleSizes[SampleIndex];
 					Sample.Keyframe = SampleKeyframes[SampleIndex];
-					Sample.DecodeTime = SampleDecodeTimes[SampleIndex];
-					Sample.Duration = SampleDurations[SampleIndex];
-					Sample.PresentationTime = Sample.DecodeTime + SamplePresentationTimeOffsets[SampleIndex];
+					Sample.DecodeTimeMs = TimeToMs( SampleDecodeTimes[SampleIndex] );
+					Sample.DurationMs = TimeToMs( SampleDurations[SampleIndex] );
+					Sample.PresentationTimeMs = TimeToMs( SampleDecodeTimes[SampleIndex] + SamplePresentationTimeOffsets[SampleIndex] );
 					Samples.Add(Sample);
 
 					ChunkOffset += Sample.DataSize;
@@ -491,17 +637,19 @@ namespace PopX
 			return new TrackSampleDescription();
 		}
 
-		static void DecodeAtom_Track(ref TTrack Track,TAtom Trak,TAtom? MdatAtom,byte[] FileData)
+		static void DecodeAtom_Track(ref TTrack Track,TAtom Trak,TAtom? MdatAtom,float MovieTimeScale,byte[] FileData)
 		{
 			List<TSample> TrackSamples = null;
 			TrackSampleDescription? TrackDescription = null;
+			TMediaHeader? MediaHeader = null;
 
 			System.Action<TAtom> EnumMinfAtom = (Atom) =>
 			{
 				//EnumAtom(Atom);
 				if (Atom.Fourcc == "stbl")
 				{
-					TrackSamples = DecodeAtom_SampleTable(Atom, MdatAtom, FileData);
+					var TrackTimeScale = MediaHeader.HasValue ? MediaHeader.Value.TimeScale : MovieTimeScale;
+					TrackSamples = DecodeAtom_SampleTable(Atom, MdatAtom, TrackTimeScale, FileData);
 
 					var SampleDescriptionAtom = PopX.Atom.GetChildAtom(Atom, "stsd", FileData);
 					if (SampleDescriptionAtom != null)
@@ -510,7 +658,9 @@ namespace PopX
 			};
 			System.Action<TAtom> EnumMdiaAtom = (Atom) =>
 			{
-				//EnumAtom(Atom);
+				if (Atom.Fourcc == "mdhd")
+					MediaHeader = DecodeAtom_MediaHeader(Atom, FileData);
+
 				if (Atom.Fourcc == "minf")
 					PopX.Atom.DecodeAtomChildren(EnumMinfAtom, Atom, FileData);
 			};
