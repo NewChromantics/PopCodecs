@@ -112,6 +112,19 @@ namespace PopX
 			}
 		}
 
+		static public TAtom? GetChildAtom(TAtom ParentAtom, string Fourcc,byte[] FileData)
+		{
+			TAtom? MatchAtom = null;
+			System.Action<TAtom> FindChild = (ChildAtom) =>
+			{
+				if (ChildAtom.Fourcc == Fourcc)
+					MatchAtom = ChildAtom;
+			};
+		
+			DecodeAtomChildren(FindChild, ParentAtom, FileData);
+			return MatchAtom;
+		}
+
 		static public void DecodeAtomChildren(System.Action<TAtom> EnumAtom, TAtom Moov, byte[] FileData)
 		{
 			//	decode moov children (mvhd, trak, udta)

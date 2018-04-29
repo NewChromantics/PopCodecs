@@ -33,7 +33,9 @@ namespace PopX
 		{
 			public long DataPosition;
 			public long DataSize;
-			public bool Keyframe;	//	
+			public bool Keyframe;	
+			public int DecodeTime;  //	todo: change to explicitly ms, currently is whatever value
+			public int DecodeDuration;  //	todo: change to explicitly ms, currently is whatever value
 		};
 		//	class to make it easier to pass around data
 		public class TTrack
@@ -180,6 +182,37 @@ namespace PopX
 			return Keyframes;
 		}
 
+
+		static List<int> GetSampleDurations(TAtom Atom, byte[] FileData,int? ExpectedSampleCount)
+		{
+			var Durations = new List<int>();
+
+			var AtomData = new byte[Atom.DataSize];
+			Array.Copy(FileData, Atom.FileOffset, AtomData, 0, AtomData.Length);
+
+			var Version = AtomData[8];
+			var Flags = Get24(AtomData[9], AtomData[10], AtomData[11]);
+			var EntryCount = Get32(AtomData[12], AtomData[13], AtomData[14], AtomData[15]);
+			var StartOffset = 16;
+
+			//	read durations as we go
+			for (int i = StartOffset; i < AtomData.Length; i += 4 + 4)
+			{
+				var SampleCount = Get32(AtomData[i + 0], AtomData[i + 1], AtomData[i + 2], AtomData[i + 3]);
+				var SampleDuration = Get32(AtomData[i + 4], AtomData[i + 5], AtomData[i + 6], AtomData[i + 7]);
+
+				for (int s = 0; s < SampleCount; s++)
+					Durations.Add(SampleDuration);
+			}
+
+			if (ExpectedSampleCount != null)
+				if (ExpectedSampleCount.Value != Durations.Count)
+					throw new System.Exception("Expected " + ExpectedSampleCount.Value + " got " + Durations.Count);
+				
+			return Durations;
+		}
+
+
 		static List<long> GetSampleSizes(TAtom Atom, byte[] FileData)
 		{
 			var Sizes = new List<long>();
@@ -314,6 +347,7 @@ namespace PopX
 			TAtom? SampleSizesAtom = null;
 			TAtom? SampleToChunkAtom = null;
 			TAtom? SyncSamplesAtom = null;
+			TAtom? SampleDurationsAtom = null;
 
 			System.Action<TAtom> EnumStblAtom = (Atom) =>
 			{
@@ -328,6 +362,8 @@ namespace PopX
 					SampleToChunkAtom = Atom;
 				if (Atom.Fourcc == "stss")
 					SyncSamplesAtom = Atom;
+				if (Atom.Fourcc == "stts")
+					SampleDurationsAtom = Atom;
 			};
 		
 			PopX.Atom.DecodeAtomChildren(EnumStblAtom, StblAtom, FileData);
@@ -339,11 +375,23 @@ namespace PopX
 				throw new System.Exception("Track missing chunk offset atom");
 			if (SampleToChunkAtom == null)
 				throw new System.Exception("Track missing sample-to-chunk table atom");
+			if (SampleDurationsAtom == null)
+				throw new System.Exception("Track missing time-to-sample table atom");
 
 			var PackedChunkMetas = GetChunkMetas(SampleToChunkAtom.Value, FileData);
 			var ChunkOffsets = GetChunkOffsets(ChunkOffsets32Atom, ChunkOffsets64Atom, FileData);
 			var SampleSizes = GetSampleSizes(SampleSizesAtom.Value, FileData);
 			var SampleKeyframes = GetSampleKeyframes(SyncSamplesAtom, FileData, SampleSizes.Count);
+			var SampleDurations = GetSampleDurations(SampleDurationsAtom.Value, FileData, SampleSizes.Count);
+
+			//	durations start at zero (proper time must come from somewhere else!) and just count up over durations
+			var SampleDecodeTimes = new int[SampleSizes.Count];
+			for (int i = 0; i < SampleDecodeTimes.Length;	i++)
+			{
+				var LastDuration = (i == 0) ? 0 : SampleDurations[i - 1];
+				var LastTime = (i == 0) ? 0 : SampleDecodeTimes[i - 1];
+				SampleDecodeTimes[i] = LastTime + LastDuration;
+			}
 
 			//	pad the metas to fit offset information
 			//	https://sites.google.com/site/james2013notes/home/mp4-file-format
@@ -396,6 +444,8 @@ namespace PopX
 					Sample.DataPosition = ChunkOffset;
 					Sample.DataSize = SampleSizes[SampleIndex];
 					Sample.Keyframe = SampleKeyframes[SampleIndex];
+					Sample.DecodeTime = SampleDecodeTimes[SampleIndex];
+					Sample.DecodeDuration = SampleDurations[SampleIndex];
 					Samples.Add(Sample);
 
 					ChunkOffset += Sample.DataSize;
@@ -409,15 +459,32 @@ namespace PopX
 			return Samples;
 		}
 
+		struct TrackSampleDescription
+		{
+			
+		}
+
+		static TrackSampleDescription GetTrackSampleDescription(TAtom stsd, byte[] FileData)
+		{
+			return new TrackSampleDescription();
+		}
+
 		static void DecodeAtom_Track(ref TTrack Track,TAtom Trak,TAtom? MdatAtom,byte[] FileData)
 		{
 			List<TSample> TrackSamples = null;
+			TrackSampleDescription? TrackDescription = null;
 
 			System.Action<TAtom> EnumMinfAtom = (Atom) =>
 			{
 				//EnumAtom(Atom);
 				if (Atom.Fourcc == "stbl")
+				{
 					TrackSamples = DecodeAtom_SampleTable(Atom, MdatAtom, FileData);
+
+					var SampleDescriptionAtom = PopX.Atom.GetChildAtom(Atom, "stsd", FileData);
+					if (SampleDescriptionAtom != null)
+						TrackDescription = GetTrackSampleDescription(SampleDescriptionAtom.Value,FileData);
+				}
 			};
 			System.Action<TAtom> EnumMdiaAtom = (Atom) =>
 			{
