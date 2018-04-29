@@ -46,7 +46,7 @@ namespace PopX
 		{
 			public long DataPosition;
 			public long DataSize;
-			public bool Keyframe;	
+			public bool IsKeyframe;	
 			public int DecodeTimeMs;
 			public int PresentationTimeMs;
 			public int DurationMs;
@@ -317,14 +317,6 @@ namespace PopX
 
 			return Sizes;
 		}
-
-		static byte[] SubArray(this Array ParentArray,long Start,long Count)
-		{
-			var ChildArray = new byte[Count];
-			Array.Copy( ParentArray, Start, ChildArray, 0, Count);
-			return ChildArray;
-		}
-
 
 
 		static TMediaHeader DecodeAtom_MediaHeader(TAtom Atom, byte[] FileData)
@@ -620,7 +612,7 @@ namespace PopX
 					var Sample = new TSample();
 					Sample.DataPosition = ChunkOffset;
 					Sample.DataSize = SampleSizes[SampleIndex];
-					Sample.Keyframe = SampleKeyframes[SampleIndex];
+					Sample.IsKeyframe = SampleKeyframes[SampleIndex];
 					Sample.DecodeTimeMs = TimeToMs( SampleDecodeTimes[SampleIndex] );
 					Sample.DurationMs = TimeToMs( SampleDurations[SampleIndex] );
 					Sample.PresentationTimeMs = TimeToMs( SampleDecodeTimes[SampleIndex] + SamplePresentationTimeOffsets[SampleIndex] );
