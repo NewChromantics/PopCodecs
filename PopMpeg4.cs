@@ -35,7 +35,8 @@ namespace PopX
 			public long DataSize;
 			public bool Keyframe;	
 			public int DecodeTime;  //	todo: change to explicitly ms, currently is whatever value
-			public int DecodeDuration;  //	todo: change to explicitly ms, currently is whatever value
+			public int PresentationTime;  //	todo: change to explicitly ms, currently is whatever value
+			public int Duration;  //	todo: change to explicitly ms, currently is whatever value
 		};
 		//	class to make it easier to pass around data
 		public class TTrack
@@ -212,6 +213,22 @@ namespace PopX
 			return Durations;
 		}
 
+		static List<int> GetSampleDurations(TAtom? Atom, byte[] FileData,int Default,int? ExpectedSampleCount)
+		{
+			if ( Atom == null )
+			{
+				//	we need to know how many samples there are, if we're going to make a list of defaults
+				if (ExpectedSampleCount == null)
+					throw new System.Exception("No Duration atom, and no sample count, so cannot generate table of defaults");
+
+				var Offsets = new List<int>();
+				for (var i = 0; i < ExpectedSampleCount.Value; i++)
+					Offsets.Add(Default);
+				return Offsets;
+			}
+
+			return GetSampleDurations(Atom.Value, FileData, ExpectedSampleCount);
+		}
 
 		static List<long> GetSampleSizes(TAtom Atom, byte[] FileData)
 		{
@@ -347,7 +364,8 @@ namespace PopX
 			TAtom? SampleSizesAtom = null;
 			TAtom? SampleToChunkAtom = null;
 			TAtom? SyncSamplesAtom = null;
-			TAtom? SampleDurationsAtom = null;
+			TAtom? SampleDecodeDurationsAtom = null;
+			TAtom? SamplePresentationTimeOffsetsAtom = null;
 
 			System.Action<TAtom> EnumStblAtom = (Atom) =>
 			{
@@ -363,7 +381,9 @@ namespace PopX
 				if (Atom.Fourcc == "stss")
 					SyncSamplesAtom = Atom;
 				if (Atom.Fourcc == "stts")
-					SampleDurationsAtom = Atom;
+					SampleDecodeDurationsAtom = Atom;
+				if (Atom.Fourcc=="ctts")
+					SamplePresentationTimeOffsetsAtom = Atom;
 			};
 		
 			PopX.Atom.DecodeAtomChildren(EnumStblAtom, StblAtom, FileData);
@@ -375,14 +395,15 @@ namespace PopX
 				throw new System.Exception("Track missing chunk offset atom");
 			if (SampleToChunkAtom == null)
 				throw new System.Exception("Track missing sample-to-chunk table atom");
-			if (SampleDurationsAtom == null)
+			if (SampleDecodeDurationsAtom == null)
 				throw new System.Exception("Track missing time-to-sample table atom");
 
 			var PackedChunkMetas = GetChunkMetas(SampleToChunkAtom.Value, FileData);
 			var ChunkOffsets = GetChunkOffsets(ChunkOffsets32Atom, ChunkOffsets64Atom, FileData);
 			var SampleSizes = GetSampleSizes(SampleSizesAtom.Value, FileData);
 			var SampleKeyframes = GetSampleKeyframes(SyncSamplesAtom, FileData, SampleSizes.Count);
-			var SampleDurations = GetSampleDurations(SampleDurationsAtom.Value, FileData, SampleSizes.Count);
+			var SampleDurations = GetSampleDurations(SampleDecodeDurationsAtom.Value, FileData, SampleSizes.Count);
+			var SamplePresentationTimeOffsets = GetSampleDurations(SamplePresentationTimeOffsetsAtom, FileData, 0, SampleSizes.Count);
 
 			//	durations start at zero (proper time must come from somewhere else!) and just count up over durations
 			var SampleDecodeTimes = new int[SampleSizes.Count];
@@ -445,7 +466,8 @@ namespace PopX
 					Sample.DataSize = SampleSizes[SampleIndex];
 					Sample.Keyframe = SampleKeyframes[SampleIndex];
 					Sample.DecodeTime = SampleDecodeTimes[SampleIndex];
-					Sample.DecodeDuration = SampleDurations[SampleIndex];
+					Sample.Duration = SampleDurations[SampleIndex];
+					Sample.PresentationTime = Sample.DecodeTime + SamplePresentationTimeOffsets[SampleIndex];
 					Samples.Add(Sample);
 
 					ChunkOffset += Sample.DataSize;
