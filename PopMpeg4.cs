@@ -20,9 +20,11 @@ namespace PopX
 		public static int Get32(byte a, byte b, byte c, byte d) { return PopX.Atom.Get32(a, b, c,d); }
 		public static int Get64(byte a, byte b, byte c, byte d, byte e, byte f, byte g, byte h) { return PopX.Atom.Get64(a, b, c,d,e,f,g,h); }
 
-		public static int Get16(byte[] Data, ref int StartIndex) { var v = Get16(Data[StartIndex + 0], Data[StartIndex + 1]);	StartIndex += 2;	return v; }
+		public static int Get8(byte[] Data, ref int StartIndex) { var v = Data[StartIndex];	StartIndex += 1; return v; }
+		public static int Get16(byte[] Data, ref int StartIndex) { var v = Get16(Data[StartIndex + 0], Data[StartIndex + 1]); StartIndex += 2; return v; }
 		public static int Get24(byte[] Data, ref int StartIndex) { var v = Get24(Data[StartIndex + 0], Data[StartIndex + 1], Data[StartIndex + 2]);	StartIndex += 3;	return v; }
 		public static int Get32(byte[] Data, ref int StartIndex) { var v = Get32(Data[StartIndex + 0], Data[StartIndex + 1], Data[StartIndex + 2], Data[StartIndex + 3]); StartIndex += 4; return v; }
+		public static int Get32_BigEndian(byte[] Data, ref int StartIndex) { var v = Get32(Data[StartIndex + 3], Data[StartIndex + 2], Data[StartIndex + 1], Data[StartIndex + 0]); StartIndex += 4; return v; }
 
 		public static byte[] Get8x4(byte[] Data, ref int StartIndex)
 		{
@@ -30,7 +32,12 @@ namespace PopX
 			StartIndex += 4;
 			return abcd;
 		}
-
+		public static byte[] GetN(byte[] Data,int Length,ref int StartIndex)
+		{
+			var SubData = Data.SubArray( StartIndex, Length );
+			StartIndex += Length;
+			return SubData;
+		}
 
 
 		//	known mpeg4 atoms
@@ -629,11 +636,25 @@ namespace PopX
 			return Samples;
 		}
 
+		public struct AVCDecoderConfigurationRecord
+		{
+			public const string Fourcc = "avc1";
+			//public TAtom AvccAtom;
+
+			public AVCDecoderConfigurationRecord(byte[] Data)
+			{
+				//	quicktime sample description header
+			}
+		}
+
 		public struct TTrackSampleDescription
 		{
 			public string Fourcc;   //	gr: this is 4 bytes, but might not actually be a fourcc?
 			public int DataReferenceIndex;
-			public byte[] Data;		//	codec specific data
+			public byte[] Data;     //	codec specific data
+
+			public TAtom? AvccAtom;
+			public byte[] AvccAtomData;
 		};
 
 		static List<TTrackSampleDescription> GetTrackSampleDescriptions(TAtom Atom, byte[] FileData)
@@ -641,11 +662,13 @@ namespace PopX
 			var Sizes = new List<long>();
 			var AtomData = FileData.SubArray(Atom.FileOffset, Atom.DataSize);
 
-			//	https://developer.apple.com/library/content/documentation/QuickTime/QTFF/art/qt_l_095.gif
+			//	this stsd description isn't well documented on the apple docs
+			//	http://xhelmboyx.tripod.com/formats/mp4-layout.txt
+			//	https://stackoverflow.com/a/14549784/355753
 			var Version = AtomData[8];
 			var Offset = 9;
 			var Flags = Get24(AtomData, ref Offset);
-			var EntryCount = Get32(AtomData, ref Offset);
+			var EntryCount = Get32(AtomData, ref Offset); 
 
 			var SampleDescriptions = new List<TTrackSampleDescription>();
 
@@ -668,6 +691,19 @@ namespace PopX
 				SampleDescription.DataReferenceIndex = DataReferenceIndex;
 				SampleDescription.Data = Data;
 				SampleDescription.Fourcc = Encoding.ASCII.GetString(Format);
+
+				//	gr: temp solution, rip off the header to get the encoder's header atom
+				if ( SampleDescription.Fourcc == "avc1" )
+				{
+					//	gr: these are the quicktime headers I think
+					var QuicktimeHeaderSize = 86;
+					var Start = Atom.FileOffset + OffsetStart + QuicktimeHeaderSize;
+					var AvccAtom = GetNextAtom(FileData, Start);
+					SampleDescription.AvccAtom = AvccAtom;
+					if ( AvccAtom.HasValue )
+						SampleDescription.AvccAtomData = AvccAtom.Value.GetAtomData(FileData);
+				}
+
 				SampleDescriptions.Add(SampleDescription);
 			}
 			return SampleDescriptions;

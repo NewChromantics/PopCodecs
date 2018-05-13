@@ -39,6 +39,15 @@ namespace PopX
 			DataSize = (uint)sz;
 
 			Fourcc = Encoding.ASCII.GetString(new byte[] { Data8[4], Data8[5], Data8[6], Data8[7] });
+
+			if (DataSize <= 0)
+				throw new System.Exception("Atom with invalid data size of " + DataSize);
+		}
+
+		//	get data after header
+		public byte[] GetAtomData(byte[] FileData)
+		{
+			return FileData.SubArray(FileOffset + HeaderSize, DataSize - HeaderSize);
 		}
 	}
 
