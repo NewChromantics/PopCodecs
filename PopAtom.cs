@@ -38,6 +38,10 @@ namespace PopX
 			sz += Data8[0] << 24;
 			DataSize = (uint)sz;
 
+			//	todo: long length;
+			//	https://msdn.microsoft.com/en-us/library/ff469478.aspx
+			//	If the value of the TrunBoxLength field is % 00.00.00.01, the TrunBoxLongLength field MUST be present.
+
 			Fourcc = Encoding.ASCII.GetString(new byte[] { Data8[4], Data8[5], Data8[6], Data8[7] });
 
 			if (DataSize <= 0)
