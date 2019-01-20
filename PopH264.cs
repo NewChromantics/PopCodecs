@@ -9,6 +9,18 @@ namespace PopX
 {
 	public static class H264
 	{
+		//	https://en.wikipedia.org/wiki/H.264/MPEG-4_AVC#Profiles
+		public enum Profile
+		{
+			Baseline = 66,
+			Extended = 88,
+			Main = 77,
+			High = 100,
+			High10 = 110,
+			High422 = 122,
+			High444 = 244,
+		};
+
 		//	how many bytes is the avcc header
 		public enum NaluFormat
 		{
@@ -35,7 +47,7 @@ namespace PopX
 			public int NaluLengthMinusOne;
 			public List<byte[]> SPSs;
 			public List<byte[]> PPSs;
-
+		
 			public int NaluLength
 			{
 				get
@@ -151,19 +163,19 @@ namespace PopX
 		}
 
 
-		public static List<byte[]> AvccToAnnexb4(AvccHeader Header,byte[] Packet)
+		public static void AvccToAnnexb4(AvccHeader Header,byte[] Packet,System.Action<byte[]> EnumAnnexBPacket)
 		{
-			var AnnexPacketDatas = new List<byte[]>();
-
 			System.Action<byte[]> EnumPacket = (RawPacket) =>
 			{
 				//	ignore non iframes
 				var nt = GetNaluType(RawPacket[0]);
+				/*	gr: why was I ignoring these?
 				if (nt != NaluType.IFrame && nt != NaluType.PFrame)
 				{
 					return;
 				}
-				Debug.Log("Found " + nt);
+				*/
+				//Debug.Log("Found " + nt + " x" + RawPacket.Length + "bytes");
 				
 				var AnnexPacketData = new List<byte>();
 				//	https://github.com/SoylentGraham/SoyLib/blob/master/src/SoyH264.cpp#L328
@@ -174,11 +186,9 @@ namespace PopX
 				//AnnexPacketData.Add(GetNaluTypeByte(NaluType.AccessUnitDelimiter));
 				//AnnexPacketData.Add(0xf0);
 				AnnexPacketData.AddRange(RawPacket);
-				AnnexPacketDatas.Add(AnnexPacketData.ToArray());
+				EnumAnnexBPacket(AnnexPacketData.ToArray());
 			};
 			SplitPacket_Avcc(Header, Packet, EnumPacket);
-
-			return AnnexPacketDatas;
 		}
 
 		static NaluType GetNaluType(byte Byte)
@@ -194,6 +204,37 @@ namespace PopX
 			NaluTypeByte |= nal_ref_idc << 5;
 			NaluTypeByte |= (int)Type;
 			return (byte)NaluTypeByte;
+		}
+
+		static int GetNaluHeaderSize(byte[] Packet)
+		{
+			var Format = GetNaluFormat(Packet);
+			switch(Format)
+			{
+				case NaluFormat.Annexb3: return 3;
+				case NaluFormat.Annexb4: return 4;
+				case NaluFormat.Avcc1: return 1;
+				case NaluFormat.Avcc2: return 2;
+				case NaluFormat.Avcc4: return 4;
+			}
+
+			throw new System.Exception("GetNaluHeaderSize unhandled: " + Format);
+ 		}
+
+		public static void GetProfileLevel(byte[] Sps_AnnexB,out Profile Profile,out float Level)
+		{
+			var Position = GetNaluHeaderSize(Sps_AnnexB);
+
+			var NaluType = Sps_AnnexB[Position + 0];
+			var Profile8 = Sps_AnnexB[Position+1];
+			var ConstraintFlag = Sps_AnnexB[Position + 2];
+			var Level8 = Sps_AnnexB[Position + 3];
+
+			int Minor = Level8 % 10;
+			int Major = (Level8 - Minor) / 10;
+
+			Level = (float)Major + (Minor / 10.0f);
+			Profile = (Profile)Profile8;
 		}
 
 		public static byte[] RawToAnnexb4(byte[] Packet,NaluType Type)
