@@ -99,10 +99,10 @@ namespace PopX
 		{
 			//	https://stackoverflow.com/a/24890903/355753
 			int Offset = 0;
-			var Version = Get8(Data,ref Offset);
+			/*var Version =*/ Get8(Data,ref Offset);
 			var Profile = Get8(Data, ref Offset);
-			var Compatibility = Get8(Data, ref Offset);
-			var Level = Get8(Data, ref Offset);
+			/*var Compatibility =*/ Get8(Data, ref Offset);
+			/*var Level =*/ Get8(Data, ref Offset);
 			var ReservedAndNaluLengthMinusOne = Get8(Data, ref Offset);
 			var ReservedAndSpsCount = Get8(Data, ref Offset);
 			var NaluLengthMinusOne = ReservedAndNaluLengthMinusOne & ((1 << 2) - 1);
@@ -168,15 +168,15 @@ namespace PopX
 			System.Action<byte[]> EnumPacket = (RawPacket) =>
 			{
 				//	ignore non iframes
+				/* gr: why was I ignoring these?
 				var nt = GetNaluType(RawPacket[0]);
-				/*	gr: why was I ignoring these?
 				if (nt != NaluType.IFrame && nt != NaluType.PFrame)
 				{
 					return;
 				}
 				*/
 				//Debug.Log("Found " + nt + " x" + RawPacket.Length + "bytes");
-				
+
 				var AnnexPacketData = new List<byte>();
 				//	https://github.com/SoylentGraham/SoyLib/blob/master/src/SoyH264.cpp#L328
 				AnnexPacketData.Add(0);
@@ -225,9 +225,9 @@ namespace PopX
 		{
 			var Position = GetNaluHeaderSize(Sps_AnnexB);
 
-			var NaluType = Sps_AnnexB[Position + 0];
+			//var NaluType = Sps_AnnexB[Position + 0];
 			var Profile8 = Sps_AnnexB[Position+1];
-			var ConstraintFlag = Sps_AnnexB[Position + 2];
+			//var ConstraintFlag = Sps_AnnexB[Position + 2];
 			var Level8 = Sps_AnnexB[Position + 3];
 
 			int Minor = Level8 % 10;

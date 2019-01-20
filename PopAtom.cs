@@ -155,7 +155,7 @@ namespace PopX
 				if (NextAtom == null)
 					break;
 				var Atom = NextAtom.Value;
-				Debug.Log("Found " + Atom.Fourcc);
+				//Debug.Log("Found " + Atom.Fourcc);
 				try
 				{
 					EnumAtom(Atom);
@@ -190,8 +190,8 @@ namespace PopX
 			Array.Copy(FileData, Atom.FileOffset, AtomData, 0, AtomData.Length);
 
 			//	https://developer.apple.com/library/content/documentation/QuickTime/QTFF/QTFFChap2/qtff2.html
-			var Version = AtomData[8];
-			var Flags = Get24(AtomData[9], AtomData[10], AtomData[11]);
+			//var Version = AtomData[8];
+			/*var Flags = */Get24(AtomData[9], AtomData[10], AtomData[11]);
 			var EntryCount = Get32(AtomData[12], AtomData[13], AtomData[14], AtomData[15]);
 
 			var MetaSize = 3 * 4;
@@ -229,8 +229,8 @@ namespace PopX
 			var AtomData = new byte[Atom.DataSize];
 			Array.Copy(FileData, Atom.FileOffset, AtomData, 0, AtomData.Length);
 
-			var Version = AtomData[8];
-			var Flags = Get24(AtomData[9], AtomData[10], AtomData[11]);
+			//var Version = AtomData[8];
+			/*var Flags = */Get24(AtomData[9], AtomData[10], AtomData[11]);
 			var EntryCount = Get32(AtomData[12], AtomData[13], AtomData[14], AtomData[15]);
 			if (OffsetSize <= 0)
 				throw new System.Exception("Invalid offset size: " + OffsetSize);
@@ -260,8 +260,8 @@ namespace PopX
 			Array.Copy(FileData, Atom.FileOffset, AtomData, 0, AtomData.Length);
 
 			//	https://developer.apple.com/library/content/documentation/QuickTime/QTFF/QTFFChap2/qtff2.html
-			var Version = AtomData[8];
-			var Flags = Get24(AtomData[9], AtomData[10], AtomData[11]);
+			//var Version = AtomData[8];
+			/*var Flags = */Get24(AtomData[9], AtomData[10], AtomData[11]);
 			var SampleSize = Get32(AtomData[12], AtomData[13], AtomData[14], AtomData[15]);
 			var EntryCount = Get32(AtomData[16], AtomData[17], AtomData[18], AtomData[19]);
 

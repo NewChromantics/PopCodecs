@@ -138,8 +138,8 @@ namespace PopX
 			Array.Copy(FileData, Atom.FileOffset, AtomData, 0, AtomData.Length);
 
 			//	https://developer.apple.com/library/content/documentation/QuickTime/QTFF/QTFFChap2/qtff2.html
-			var Version = AtomData[8];
-			var Flags = PopX.Atom.Get24(AtomData[9], AtomData[10], AtomData[11]);
+			//var Version = AtomData[8];
+			/*var Flags =*/ PopX.Atom.Get24(AtomData[9], AtomData[10], AtomData[11]);
 			var EntryCount = PopX.Atom.Get32(AtomData[12], AtomData[13], AtomData[14], AtomData[15]);
 
 			var MetaSize = 3 * 4;
@@ -179,8 +179,8 @@ namespace PopX
 			var AtomData = new byte[Atom.DataSize];
 			Array.Copy(FileData, Atom.FileOffset, AtomData, 0, AtomData.Length);
 
-			var Version = AtomData[8];
-			var Flags = Get24(AtomData[9], AtomData[10], AtomData[11]);
+			//var Version = AtomData[8];
+			/*var Flags = */Get24(AtomData[9], AtomData[10], AtomData[11]);
 			var EntryCount = Get32(AtomData[12], AtomData[13], AtomData[14], AtomData[15]);
 			if (OffsetSize <= 0)
 				throw new System.Exception("Invalid offset size: " + OffsetSize);
@@ -219,8 +219,8 @@ namespace PopX
 			var AtomData = new byte[Atom.DataSize];
 			Array.Copy(FileData, Atom.FileOffset, AtomData, 0, AtomData.Length);
 
-			var Version = AtomData[8];
-			var Flags = Get24(AtomData[9], AtomData[10], AtomData[11]);
+			//var Version = AtomData[8];
+			/*var Flags =*/ Get24(AtomData[9], AtomData[10], AtomData[11]);
 			var EntryCount = Get32(AtomData[12], AtomData[13], AtomData[14], AtomData[15]);
 
 			//	each entry in the table is the size of a sample (and one chunk can have many samples)
@@ -258,9 +258,9 @@ namespace PopX
 			var AtomData = new byte[Atom.DataSize];
 			Array.Copy(FileData, Atom.FileOffset, AtomData, 0, AtomData.Length);
 
-			var Version = AtomData[8];
-			var Flags = Get24(AtomData[9], AtomData[10], AtomData[11]);
-			var EntryCount = Get32(AtomData[12], AtomData[13], AtomData[14], AtomData[15]);
+			//var Version = AtomData[8];
+			/*var Flags =*/ Get24(AtomData[9], AtomData[10], AtomData[11]);
+			/*var EntryCount =*/ Get32(AtomData[12], AtomData[13], AtomData[14], AtomData[15]);
 			var StartOffset = 16;
 
 			//	read durations as we go
@@ -304,8 +304,8 @@ namespace PopX
 			Array.Copy(FileData, Atom.FileOffset, AtomData, 0, AtomData.Length);
 
 			//	https://developer.apple.com/library/content/documentation/QuickTime/QTFF/QTFFChap2/qtff2.html
-			var Version = AtomData[8];
-			var Flags = Get24(AtomData[9], AtomData[10], AtomData[11]);
+			//var Version = AtomData[8];
+			/*var Flags =*/ Get24(AtomData[9], AtomData[10], AtomData[11]);
 			var SampleSize = Get32(AtomData[12], AtomData[13], AtomData[14], AtomData[15]);
 			var EntryCount = Get32(AtomData[16], AtomData[17], AtomData[18], AtomData[19]);
 
@@ -345,9 +345,9 @@ namespace PopX
 		{
 			var AtomData = FileData.SubArray(Atom.FileOffset, Atom.DataSize);
 
-			var Version = AtomData[8];
+			//var Version = AtomData[8];
 			var Offset = 9;
-			var Flags = Get24(AtomData, ref Offset);
+			/*var Flags =*/ Get24(AtomData, ref Offset);
 			var CreationTime = Get32(AtomData, ref Offset);
 			var ModificationTime = Get32(AtomData, ref Offset);
 			var TimeScale = Get32(AtomData, ref Offset);
@@ -368,28 +368,27 @@ namespace PopX
 
 		static TMovieHeader DecodeAtom_MovieHeader(TAtom Atom,byte[] FileData)
 		{
-			var Sizes = new List<long>();
 			var AtomData = FileData.SubArray(Atom.FileOffset, Atom.DataSize);
 
 			//	https://developer.apple.com/library/content/documentation/QuickTime/QTFF/art/qt_l_095.gif
-			var Version = AtomData[8];
+			//var Version = AtomData[8];
 			var Offset = 9;
-			var Flags = Get24(AtomData,ref Offset);
+			/*var Flags = */Get24(AtomData,ref Offset);
 			var CreationTime = Get32(AtomData,ref Offset);
 			var ModificationTime = Get32(AtomData,ref Offset);
 			var TimeScale = Get32(AtomData,ref Offset);
 			var Duration = Get32(AtomData,ref Offset);
-			var PreferredRate = Get32(AtomData,ref Offset);
-			var PreferredVolume = Get16(AtomData,ref Offset);
+			/*var PreferredRate =*/ Get32(AtomData,ref Offset);
+			/*var PreferredVolume =*/ Get16(AtomData,ref Offset);
 			var Reserved = AtomData.SubArray(Offset, 10);	Offset += 10;
 			var Matrix = AtomData.SubArray(Offset, 36); Offset += 36;
-			var PreviewTime = Get32(AtomData,ref Offset);
+			/*var PreviewTime =*/ Get32(AtomData,ref Offset);
 			var PreviewDuration = Get32(AtomData,ref Offset);
-			var PosterTime = Get32(AtomData,ref Offset);
-			var SelectionTime = Get32(AtomData,ref Offset);
-			var SelectionDuration = Get32(AtomData,ref Offset);
-			var CurrentTime = Get32(AtomData,ref Offset);
-			var NextTrackId = Get32(AtomData,ref Offset);
+			/*var PosterTime =*/ Get32(AtomData,ref Offset);
+			/*var SelectionTime =*/ Get32(AtomData,ref Offset);
+			/*var SelectionDuration =*/ Get32(AtomData,ref Offset);
+			/*var CurrentTime =*/ Get32(AtomData,ref Offset);
+			/*var NextTrackId =*/ Get32(AtomData,ref Offset);
 
 			foreach (var Zero in Reserved)
 				if (Zero != 0)
@@ -458,17 +457,17 @@ namespace PopX
 			var Length = FileData.Length;
 
 			//	decode the header atoms
-			TAtom? ftypAtom = null;
+			//TAtom? ftypAtom = null;
 			TAtom? moovAtom = null;	//	moovie
 			TAtom? moofAtom = null;	//	movie fragment
-			TAtom? mdatAtom = null;
+			//TAtom? mdatAtom = null;
 
 			System.Action<TAtom> EnumRootAtoms = (Atom) =>
 			{
-				if (Atom.Fourcc == "ftyp") ftypAtom = Atom;
-				else if (Atom.Fourcc == "moov") moovAtom = Atom;
+				if (Atom.Fourcc == "moov") moovAtom = Atom;
 				else if (Atom.Fourcc == "moof") moofAtom = Atom;
-				else if (Atom.Fourcc == "mdat") mdatAtom = Atom;
+				//else if (Atom.Fourcc == "mdat") mdatAtom = Atom;
+				//else if (Atom.Fourcc == "ftyp") ftypAtom = Atom;
 				else
 					Debug.Log("Ignored atom: " + Atom.Fourcc);
 			};
@@ -570,7 +569,7 @@ namespace PopX
 			//	this stsd description isn't well documented on the apple docs
 			//	http://xhelmboyx.tripod.com/formats/mp4-layout.txt
 			//	https://stackoverflow.com/a/14549784/355753
-			var Version = AtomData[8];
+			//var Version = AtomData[8];
 			var Offset = 8;
 			var Flags = Get32(AtomData, ref Offset);//	0xb01
 			var EntryCount = Get32(AtomData, ref Offset);//60
@@ -598,7 +597,7 @@ namespace PopX
 				if (FirstSampleFlagsPresent)
 					throw new System.Exception("Unhandled case: FirstSampleFlagsPresent");
 
-				var OffsetStart = Offset;
+				//var OffsetStart = Offset;
 				var SampleDuration = SampleDurationPresent ? Get32(AtomData, ref Offset) : 0;
 				var SampleSize = SampleSizePresent ? Get32(AtomData, ref Offset) : 0;
 				var TrunBoxSampleFlags = SampleFlagsPresent ? Get32(AtomData, ref Offset) : 0;
@@ -774,15 +773,14 @@ namespace PopX
 
 		static List<TTrackSampleDescription> GetTrackSampleDescriptions(TAtom Atom, byte[] FileData)
 		{
-			var Sizes = new List<long>();
 			var AtomData = FileData.SubArray(Atom.FileOffset, Atom.DataSize);
 
 			//	this stsd description isn't well documented on the apple docs
 			//	http://xhelmboyx.tripod.com/formats/mp4-layout.txt
 			//	https://stackoverflow.com/a/14549784/355753
-			var Version = AtomData[8];
+			//var Version = AtomData[8];
 			var Offset = 9;
-			var Flags = Get24(AtomData, ref Offset);
+			/*var Flags = */Get24(AtomData, ref Offset);
 			var EntryCount = Get32(AtomData, ref Offset); 
 
 			var SampleDescriptions = new List<TTrackSampleDescription>();
@@ -792,7 +790,7 @@ namespace PopX
 				var OffsetStart = Offset;
 				var Size = Get32(AtomData, ref Offset);
 				var Format = Get8x4(AtomData, ref Offset);
-				var Reserved = AtomData.SubArray(Offset, 6);
+				//var Reserved = AtomData.SubArray(Offset, 6);
 				Offset += 6;
 				var DataReferenceIndex = Get16(AtomData, ref Offset);
 
@@ -829,7 +827,6 @@ namespace PopX
 		{
 			List<TSample> TrackSamples = null;
 			List<TTrackSampleDescription> TrackSampleDescriptions = null;
-			TMediaHeader? MediaHeader = null;
 
 			System.Action<TAtom> EnumTrakChild = (Atom) =>
 			{
