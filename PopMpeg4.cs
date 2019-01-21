@@ -547,8 +547,9 @@ namespace PopX
 			else
 				MovieHeader = null;
 			*/
-			//	gotta be local to be used in lambda
-			var TimeScale = 1.0f;
+
+			//	find this scale!
+			var TimeScale = 1.0f / 10000000.0f;
 			System.Action<TAtom> EnumMoovChildAtom = (Atom) =>
 			{
 				if (Atom.Fourcc == "traf")
@@ -597,6 +598,13 @@ namespace PopX
 				throw new System.Exception("Expected data offset to be always set");
 			var DataOffset = DataOffsetPresent ? Get32(AtomData, ref Offset) : 0;//	868
 
+			System.Func<int, int> TimeToMs = (TimeUnit) =>
+			{
+				//	to float
+				var Timef = TimeUnit * TimeScale;
+				var TimeMs = Timef * 1000.0f;
+				return (int)TimeMs;
+			};
 
 			var Samples = new List<TSample>();
 			var CurrentDataStartPosition = DataOffset;
@@ -620,13 +628,13 @@ namespace PopX
 				var Sample = new TSample();
 				Sample.DataPosition = CurrentDataStartPosition;
 				Sample.DataSize = SampleSize;
-				Sample.DurationMs = (int)((float)SampleDuration / TimeScale);
+				Sample.DurationMs = TimeToMs(SampleDuration);
 				Sample.IsKeyframe = false;
-				Sample.PresentationTimeMs = (int)((float)SampleCompositionTimeOffset / TimeScale);
-				Sample.DecodeTimeMs = CurrentTime;
+				Sample.DecodeTimeMs = TimeToMs(CurrentTime);
+				Sample.PresentationTimeMs = TimeToMs(CurrentTime+SampleCompositionTimeOffset);
 				Samples.Add(Sample);
 
-				CurrentTime += Sample.DurationMs;
+				CurrentTime += SampleDuration;
 				CurrentDataStartPosition += SampleSize;
 			}
 
