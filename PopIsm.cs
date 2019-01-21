@@ -61,6 +61,7 @@ namespace PopX
 			public string UrlTemplate;  //	Url="QualityLevels({bitrate})/Fragments(video={start time})
 			public List<int> ChunkStartTimes = new List<int>();
 			public List<int> ChunkDurations = new List<int>();
+			public int ChunkCount { get { return ChunkStartTimes.Count; } }
 			public List<SmoothStreamSource> Sources = new List<SmoothStreamSource>();
 
 			public string GetUrl(int BitRate, int ChunkIndex,string BaseUrl)
