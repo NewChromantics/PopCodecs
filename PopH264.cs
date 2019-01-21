@@ -54,6 +54,10 @@ namespace PopX
 				{
 					return NaluLengthMinusOne + 1;
 				}
+				set
+				{
+					NaluLengthMinusOne = value - 1;
+				}
 			}
 
 			public AvccHeader(int AvccProfile,int NaluLengthMinusOne)

@@ -66,6 +66,7 @@ namespace PopX
 		*/
 		public struct TSample
 		{
+			//	todo: store MDat position instead of absolute?
 			public long DataPosition;
 			public long DataSize;
 			public bool IsKeyframe;	
@@ -570,6 +571,7 @@ namespace PopX
 			//	http://xhelmboyx.tripod.com/formats/mp4-layout.txt
 			//	https://stackoverflow.com/a/14549784/355753
 			//var Version = AtomData[8];
+
 			var Offset = 8;
 			var Flags = Get32(AtomData, ref Offset);//	0xb01
 			var EntryCount = Get32(AtomData, ref Offset);//60
@@ -587,11 +589,18 @@ namespace PopX
 			var FirstSampleFlagsPresent = IsFlagBit(3);
 			var DataOffsetPresent = IsFlagBit(0);
 
+			//	This field MUST be set.It specifies the offset from the beginning of the MoofBox field(section 2.2.4.1).
+			//	gr:... to what?
+			//	If only one TrunBox is specified, then the DataOffset field MUST be the sum of the lengths of the MoofBox and all the fields in the MdatBox field(section 2.2.4.8).
+			//	basically, start of mdat data (which we know anyway)
+			if (!DataOffsetPresent)
+				throw new System.Exception("Expected data offset to be always set");
 			var DataOffset = DataOffsetPresent ? Get32(AtomData, ref Offset) : 0;//	868
 
 
 			var Samples = new List<TSample>();
-			var DataStartPosition = DataOffset;
+			var CurrentDataStartPosition = DataOffset;
+			var CurrentTime = 0;
 			for (int sd = 0; sd < EntryCount; sd++)
 			{
 				if (FirstSampleFlagsPresent)
@@ -603,16 +612,22 @@ namespace PopX
 				var TrunBoxSampleFlags = SampleFlagsPresent ? Get32(AtomData, ref Offset) : 0;
 				var SampleCompositionTimeOffset = SampleCompositionTimeOffsetPresent ? Get32(AtomData, ref Offset) : 0;
 
+				if (SampleCompositionTimeOffsetPresent)
+				{
+					//	correct CurrentTimeMs?
+				}
+
 				var Sample = new TSample();
-				Sample.DataPosition = DataStartPosition;
+				Sample.DataPosition = CurrentDataStartPosition;
 				Sample.DataSize = SampleSize;
 				Sample.DurationMs = (int)((float)SampleDuration / TimeScale);
 				Sample.IsKeyframe = false;
 				Sample.PresentationTimeMs = (int)((float)SampleCompositionTimeOffset / TimeScale);
-				Sample.DecodeTimeMs = 0;
+				Sample.DecodeTimeMs = CurrentTime;
 				Samples.Add(Sample);
 
-				DataStartPosition += SampleSize;
+				CurrentTime += Sample.DurationMs;
+				CurrentDataStartPosition += SampleSize;
 			}
 
 			return Samples;
