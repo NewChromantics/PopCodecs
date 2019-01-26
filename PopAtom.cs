@@ -26,8 +26,12 @@ namespace PopX
 	{
 		public const long HeaderSize = 8;
 		public string Fourcc;
-		public long FileOffset;
+		public long FileOffset;		//	start of atom
 		public long DataSize;
+		public long FileDataOffset	//	start of data
+		{
+			get { return FileOffset + HeaderSize; }
+		}
 
 		public void Set(byte[] Data8)
 		{

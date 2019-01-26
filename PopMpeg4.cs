@@ -499,13 +499,14 @@ namespace PopX
 			//	others (eg. azure stream) has no moov but 1 moof
 			TAtom? moovAtom = null;
 			var MoofAtoms = new List<TAtom>();
+			var MdatAtoms = new List<TAtom>();
 			//TAtom? mdatAtom = null;
 
 			System.Action<TAtom> EnumRootAtoms = (Atom) =>
 			{
 				if (Atom.Fourcc == "moov") moovAtom = Atom;
 				else if (Atom.Fourcc == "moof") MoofAtoms.Add(Atom);
-				//else if (Atom.Fourcc == "mdat") mdatAtom = Atom;
+				else if (Atom.Fourcc == "mdat") MdatAtoms.Add(Atom);
 				//else if (Atom.Fourcc == "ftyp") ftypAtom = Atom;
 				else
 					Debug.Log("Ignored atom: " + Atom.Fourcc);
@@ -531,10 +532,13 @@ namespace PopX
 				DecodeAtom_Moov(out Tracks, out Header, moovAtom.Value, FileData);
 			}
 
-			foreach ( var MoofAtom in MoofAtoms )
+			for (var mai = 0; mai < MoofAtoms.Count;	mai++ )
 			{
+				var MoofAtom = MoofAtoms[mai];
+				var MdatIdent = mai;	//	currently just indexed
 				List<TTrack> MoofTracks;
-				DecodeAtom_Moof(out MoofTracks, out Header, MoofAtom, FileData);
+				DecodeAtom_Moof(out MoofTracks, out Header, MoofAtom, FileData, MdatIdent);
+
 
 				//	todo: merge tracks properly. Make sure track indexes match!
 				for (int mfi = 0; mfi < MoofTracks.Count;	mfi++)
@@ -542,6 +546,19 @@ namespace PopX
 					var MoofTrack = MoofTracks[mfi];
 					if (Tracks == null)
 						Tracks = new List<TTrack>();
+
+					//	temporarily correct sample offsets
+					//	todo: change accessor/give accessor
+					var Mdat = MdatAtoms[MdatIdent];
+					if (MoofTrack.Samples != null)
+					{
+						for (var mtsi = 0; mtsi < MoofTrack.Samples.Count; mtsi++)
+						{
+							var Sample = MoofTrack.Samples[mtsi];
+							Sample.DataPosition += Mdat.FileDataOffset;
+							MoofTrack.Samples[mtsi] = Sample;
+						}
+					}
 
 					while ( Tracks.Count < mfi )
 					{
@@ -588,7 +605,7 @@ namespace PopX
 
 		//	microsoft seems to have the best reference
 		//	https://msdn.microsoft.com/en-us/library/ff469287.aspx
-		static void DecodeAtom_Moof(out List<TTrack> Tracks, out TMovieHeader? MovieHeader, TAtom Moov, byte[] FileData)
+		static void DecodeAtom_Moof(out List<TTrack> Tracks, out TMovieHeader? MovieHeader, TAtom Moov, byte[] FileData,int? MdatIdent)
 		{
 			var NewTracks = new List<TTrack>();
 			MovieHeader = null;
@@ -608,7 +625,7 @@ namespace PopX
 				if (Atom.Fourcc == "traf")
 				{
 					var Track = new TTrack();
-					DecodeAtom_TrackFragment(ref Track, Atom, null, TimeScale, FileData);
+					DecodeAtom_TrackFragment(ref Track, Atom, null, MdatIdent, TimeScale, FileData);
 					NewTracks.Add(Track);
 				}
 			};
@@ -617,7 +634,7 @@ namespace PopX
 		}
 
 		//	trun
-		static List<TSample> DecodeAtom_FragmentSampleTable(TAtom Atom, float TimeScale, byte[] FileData)
+		static List<TSample> DecodeAtom_FragmentSampleTable(TAtom Atom, float TimeScale, byte[] FileData,int? MDatIdent)
 		{
 			var AtomData = FileData.SubArray(Atom.FileOffset, Atom.DataSize);
 
@@ -627,8 +644,8 @@ namespace PopX
 			//var Version = AtomData[8];
 
 			var Offset = 8;
-			var Flags = Get32(AtomData, ref Offset);//	0xb01
-			var EntryCount = Get32(AtomData, ref Offset);//60
+			var Flags = Get32(AtomData, ref Offset);
+			var EntryCount = Get32(AtomData, ref Offset);
 
 			//	https://msdn.microsoft.com/en-us/library/ff469478.aspx
 			//	the docs on which flags are which are very confusing (they list either 25 bits or 114 or I don't know what)
@@ -649,7 +666,7 @@ namespace PopX
 			//	basically, start of mdat data (which we know anyway)
 			if (!DataOffsetPresent)
 				throw new System.Exception("Expected data offset to be always set");
-			var DataOffset = DataOffsetPresent ? Get32(AtomData, ref Offset) : 0;//	868
+			var DataOffset = DataOffsetPresent ? Get32(AtomData, ref Offset) : 0;
 
 			System.Func<int, int> TimeToMs = (TimeUnit) =>
 			{
@@ -667,7 +684,6 @@ namespace PopX
 				if (FirstSampleFlagsPresent)
 					throw new System.Exception("Unhandled case: FirstSampleFlagsPresent");
 
-				//var OffsetStart = Offset;
 				var SampleDuration = SampleDurationPresent ? Get32(AtomData, ref Offset) : 0;
 				var SampleSize = SampleSizePresent ? Get32(AtomData, ref Offset) : 0;
 				var TrunBoxSampleFlags = SampleFlagsPresent ? Get32(AtomData, ref Offset) : 0;
@@ -679,6 +695,7 @@ namespace PopX
 				}
 
 				var Sample = new TSample();
+				Sample.MDatIdent = MDatIdent.HasValue ? MDatIdent.Value : -1;
 				Sample.DataPosition = CurrentDataStartPosition;
 				Sample.DataSize = SampleSize;
 				Sample.DurationMs = TimeToMs(SampleDuration);
@@ -899,7 +916,7 @@ namespace PopX
 		}
 
 		//	traf
-		static void DecodeAtom_TrackFragment(ref TTrack Track, TAtom Trak, TAtom? MdatAtom, float MovieTimeScale, byte[] FileData)
+		static void DecodeAtom_TrackFragment(ref TTrack Track, TAtom Trak, TAtom? MdatAtom,int? MdatIdent,float MovieTimeScale, byte[] FileData)
 		{
 			List<TSample> TrackSamples = null;
 			List<TTrackSampleDescription> TrackSampleDescriptions = null;
@@ -907,7 +924,7 @@ namespace PopX
 			System.Action<TAtom> EnumTrakChild = (Atom) =>
 			{
 				if (Atom.Fourcc == "trun")
-					TrackSamples = DecodeAtom_FragmentSampleTable(Atom, MovieTimeScale, FileData);
+					TrackSamples = DecodeAtom_FragmentSampleTable(Atom, MovieTimeScale, FileData, MdatIdent);
 			};
 
 			//	go through the track
