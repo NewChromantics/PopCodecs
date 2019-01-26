@@ -33,12 +33,13 @@ namespace PopX
 		public static int Get16(byte a, byte b) { return PopX.Atom.Get16(a, b); }
 		public static int Get24(byte a, byte b, byte c) { return PopX.Atom.Get24(a, b, c); }
 		public static int Get32(byte a, byte b, byte c, byte d) { return PopX.Atom.Get32(a, b, c,d); }
-		public static int Get64(byte a, byte b, byte c, byte d, byte e, byte f, byte g, byte h) { return PopX.Atom.Get64(a, b, c,d,e,f,g,h); }
+		public static long Get64(byte a, byte b, byte c, byte d, byte e, byte f, byte g, byte h) { return PopX.Atom.Get64(a, b, c,d,e,f,g,h); }
 
 		public static int Get8(byte[] Data, ref int StartIndex) { var v = Data[StartIndex];	StartIndex += 1; return v; }
 		public static int Get16(byte[] Data, ref int StartIndex) { var v = Get16(Data[StartIndex + 0], Data[StartIndex + 1]); StartIndex += 2; return v; }
 		public static int Get24(byte[] Data, ref int StartIndex) { var v = Get24(Data[StartIndex + 0], Data[StartIndex + 1], Data[StartIndex + 2]);	StartIndex += 3;	return v; }
 		public static int Get32(byte[] Data, ref int StartIndex) { var v = Get32(Data[StartIndex + 0], Data[StartIndex + 1], Data[StartIndex + 2], Data[StartIndex + 3]); StartIndex += 4; return v; }
+		public static long Get64(byte[] Data, ref int StartIndex) { var v = Get64(Data[StartIndex + 0], Data[StartIndex + 1], Data[StartIndex + 2], Data[StartIndex + 3], Data[StartIndex + 4], Data[StartIndex + 5], Data[StartIndex + 6], Data[StartIndex + 7]); StartIndex += 8; return v; }
 		public static int Get32_BigEndian(byte[] Data, ref int StartIndex) { var v = Get32(Data[StartIndex + 3], Data[StartIndex + 2], Data[StartIndex + 1], Data[StartIndex + 0]); StartIndex += 4; return v; }
 
 		public static byte[] Get8x4(byte[] Data, ref int StartIndex)
@@ -67,6 +68,7 @@ namespace PopX
 		public struct TSample
 		{
 			//	todo: store MDat position instead of absolute?
+			public int MDatIdent;		//	if -1 then position is absolute
 			public long DataPosition;
 			public long DataSize;
 			public bool IsKeyframe;	
@@ -124,7 +126,7 @@ namespace PopX
 		};
 
 
-		static public System.DateTime GetDateTimeFromSecondsSinceMidnightJan1st1904(int Seconds)
+		static public System.DateTime GetDateTimeFromSecondsSinceMidnightJan1st1904(long Seconds)
 		{
 			//	todo: check this
 			var Epoch = new DateTime(1904, 1, 1, 0, 0, 0, DateTimeKind.Utc);
@@ -226,28 +228,31 @@ namespace PopX
 
 			//	each entry in the table is the size of a sample (and one chunk can have many samples)
 			var StartOffset = 16;
-			//	gr: docs don't say size, but this seems accurate...
-			var IndexSize = (AtomData.Length - StartOffset) / EntryCount;
-			for (int i = StartOffset; i < AtomData.Length; i += IndexSize)
-			{
-				int SampleIndex;
-				if (IndexSize == 3)
-				{
-					SampleIndex = Get24(AtomData[i + 0], AtomData[i + 1], AtomData[i + 2]);
-				}
-				else if (IndexSize == 4)
-				{
-					SampleIndex = Get32(AtomData[i + 0], AtomData[i + 1], AtomData[i + 2], AtomData[i + 3]);
-				}
-				else
-				{
-					throw new System.Exception("Unhandled index size " + IndexSize);
-				}
-				//	gr: indexes start at 1 again...
-				SampleIndex--;
-				Keyframes[SampleIndex] = true;
-			}
 
+			if (EntryCount > 0)
+			{
+				//	gr: docs don't say size, but this seems accurate...
+				var IndexSize = (AtomData.Length - StartOffset) / EntryCount;
+				for (int i = StartOffset; i < AtomData.Length; i += IndexSize)
+				{
+					int SampleIndex;
+					if (IndexSize == 3)
+					{
+						SampleIndex = Get24(AtomData[i + 0], AtomData[i + 1], AtomData[i + 2]);
+					}
+					else if (IndexSize == 4)
+					{
+						SampleIndex = Get32(AtomData[i + 0], AtomData[i + 1], AtomData[i + 2], AtomData[i + 3]);
+					}
+					else
+					{
+						throw new System.Exception("Unhandled index size " + IndexSize);
+					}
+					//	gr: indexes start at 1 again...
+					SampleIndex--;
+					Keyframes[SampleIndex] = true;
+				}
+			}
 			return Keyframes;
 		}
 
@@ -261,7 +266,7 @@ namespace PopX
 
 			//var Version = AtomData[8];
 			/*var Flags =*/ Get24(AtomData[9], AtomData[10], AtomData[11]);
-			/*var EntryCount =*/ Get32(AtomData[12], AtomData[13], AtomData[14], AtomData[15]);
+			var EntryCount = Get32(AtomData[12], AtomData[13], AtomData[14], AtomData[15]);
 			var StartOffset = 16;
 
 			//	read durations as we go
@@ -272,6 +277,12 @@ namespace PopX
 
 				for (int s = 0; s < SampleCount; s++)
 					Durations.Add(SampleDuration);
+			}
+
+			if (Durations.Count != EntryCount)
+			{
+				//	gr: for some reason, EntryCount is often 1, but there are more samples 
+				//	throw new System.Exception("Expected " + EntryCount  + "(EntryCount) got " + Durations.Count);
 			}
 
 			if (ExpectedSampleCount != null)
@@ -305,8 +316,8 @@ namespace PopX
 			Array.Copy(FileData, Atom.FileOffset, AtomData, 0, AtomData.Length);
 
 			//	https://developer.apple.com/library/content/documentation/QuickTime/QTFF/QTFFChap2/qtff2.html
-			//var Version = AtomData[8];
-			/*var Flags =*/ Get24(AtomData[9], AtomData[10], AtomData[11]);
+			var Version = AtomData[8];
+			var Flags = Get24(AtomData[9], AtomData[10], AtomData[11]);
 			var SampleSize = Get32(AtomData[12], AtomData[13], AtomData[14], AtomData[15]);
 			var EntryCount = Get32(AtomData[16], AtomData[17], AtomData[18], AtomData[19]);
 
@@ -320,19 +331,23 @@ namespace PopX
 
 			//	each entry in the table is the size of a sample (and one chunk can have many samples)
 			var SampleSizeStart = 20;
-			//	gr: docs don't say size, but this seems accurate...
-			SampleSize = (AtomData.Length - SampleSizeStart) / EntryCount;
-			for (int i = SampleSizeStart; i < AtomData.Length; i += SampleSize)
+
+			if (EntryCount > 0)
 			{
-				if (SampleSize == 3)
+				//	gr: docs don't say size, but this seems accurate...
+				SampleSize = (AtomData.Length - SampleSizeStart) / EntryCount;
+				for (int i = SampleSizeStart; i < AtomData.Length; i += SampleSize)
 				{
-					var Size = Get24(AtomData[i + 0], AtomData[i + 1], AtomData[i + 2]);
-					Sizes.Add(Size);
-				}
-				else if (SampleSize == 4)
-				{
-					var Size = Get32(AtomData[i + 0], AtomData[i + 1], AtomData[i + 2], AtomData[i + 3]);
-					Sizes.Add(Size);
+					if (SampleSize == 3)
+					{
+						var Size = Get24(AtomData[i + 0], AtomData[i + 1], AtomData[i + 2]);
+						Sizes.Add(Size);
+					}
+					else if (SampleSize == 4)
+					{
+						var Size = Get32(AtomData[i + 0], AtomData[i + 1], AtomData[i + 2], AtomData[i + 3]);
+						Sizes.Add(Size);
+					}
 				}
 			}
 			if (Sizes.Count() != EntryCount)
@@ -372,15 +387,35 @@ namespace PopX
 			var AtomData = FileData.SubArray(Atom.FileOffset, Atom.DataSize);
 
 			//	https://developer.apple.com/library/content/documentation/QuickTime/QTFF/art/qt_l_095.gif
-			//var Version = AtomData[8];
+			var Version = AtomData[8];
 			var Offset = 9;
-			/*var Flags = */Get24(AtomData,ref Offset);
-			var CreationTime = Get32(AtomData,ref Offset);
-			var ModificationTime = Get32(AtomData,ref Offset);
-			var TimeScale = Get32(AtomData,ref Offset);
-			var Duration = Get32(AtomData,ref Offset);
+			var Flags = Get24(AtomData,ref Offset);
+
+			//	hololens had what looked like 64 bit timestamps...
+			//	this is my working reference :)
+			//	https://github.com/macmade/MP4Parse/blob/master/source/MP4.MVHD.cpp#L50
+			long CreationTime, ModificationTime, Duration;
+			int TimeScale;
+			if (Version == 0)
+			{
+				CreationTime = Get32(AtomData, ref Offset);
+				ModificationTime = Get32(AtomData, ref Offset);
+				TimeScale = Get32(AtomData, ref Offset);
+				Duration = Get32(AtomData, ref Offset);
+			}
+			else if(Version == 1)
+			{
+				CreationTime = Get64(AtomData, ref Offset);
+				ModificationTime = Get64(AtomData, ref Offset);
+				TimeScale = Get32(AtomData, ref Offset);
+				Duration = Get64(AtomData, ref Offset);
+			}
+			else
+			{
+				throw new System.Exception("Expected Version 0 or 1 for MVHD. If neccessary can probably continue without timing info!");
+			}
 			/*var PreferredRate =*/ Get32(AtomData,ref Offset);
-			/*var PreferredVolume =*/ Get16(AtomData,ref Offset);
+			/*var PreferredVolume =*/ Get16(AtomData,ref Offset);	//	8.8 fixed point volume
 			var Reserved = AtomData.SubArray(Offset, 10);	Offset += 10;
 			var Matrix = AtomData.SubArray(Offset, 36); Offset += 36;
 			/*var PreviewTime =*/ Get32(AtomData,ref Offset);
@@ -459,14 +494,17 @@ namespace PopX
 
 			//	decode the header atoms
 			//TAtom? ftypAtom = null;
-			TAtom? moovAtom = null;	//	moovie
-			TAtom? moofAtom = null;	//	movie fragment
+
+			//	only ever one? streaming video from hololens had 1 and then multiple moofs and mdats
+			//	others (eg. azure stream) has no moov but 1 moof
+			TAtom? moovAtom = null;
+			var MoofAtoms = new List<TAtom>();
 			//TAtom? mdatAtom = null;
 
 			System.Action<TAtom> EnumRootAtoms = (Atom) =>
 			{
 				if (Atom.Fourcc == "moov") moovAtom = Atom;
-				else if (Atom.Fourcc == "moof") moofAtom = Atom;
+				else if (Atom.Fourcc == "moof") MoofAtoms.Add(Atom);
 				//else if (Atom.Fourcc == "mdat") mdatAtom = Atom;
 				//else if (Atom.Fourcc == "ftyp") ftypAtom = Atom;
 				else
@@ -481,26 +519,41 @@ namespace PopX
 
 			//if (ftypAtom == null)
 			//	Errors.Add("Missing ftyp atom");
-			if (moovAtom == null && moofAtom==null)
-				Errors.Add("Missing moov/moof atom");
 			if (Errors.Count > 0)
 				throw new System.Exception(String.Join(", ",Errors.ToArray()));
 
-			List<TTrack> Tracks;
+
+			List<TTrack> Tracks = null;
 			TMovieHeader? Header;
 			if (moovAtom != null)
 			{
 				//	decode moov (tracks, sample data etc)
 				DecodeAtom_Moov(out Tracks, out Header, moovAtom.Value, FileData);
 			}
-			else if ( moofAtom != null )
+
+			foreach ( var MoofAtom in MoofAtoms )
 			{
-				DecodeAtom_Moof(out Tracks, out Header, moofAtom.Value, FileData);
+				List<TTrack> MoofTracks;
+				DecodeAtom_Moof(out MoofTracks, out Header, MoofAtom, FileData);
+
+				//	todo: merge tracks properly. Make sure track indexes match!
+				for (int mfi = 0; mfi < MoofTracks.Count;	mfi++)
+				{
+					var MoofTrack = MoofTracks[mfi];
+					if (Tracks == null)
+						Tracks = new List<TTrack>();
+
+					while ( Tracks.Count < mfi )
+					{
+						Tracks.Add(new TTrack());
+					}
+					if (MoofTrack.SampleDescriptions!=null)
+						Tracks[mfi].SampleDescriptions.AddRange(MoofTrack.SampleDescriptions);
+					if (MoofTrack.Samples != null)
+						Tracks[mfi].Samples.AddRange(MoofTrack.Samples);
+				}
 			}
-			else
-			{
-				throw new System.Exception("No movie header atom");
-			}
+
 			foreach (var t in Tracks)
 				EnumTrack(t);
 		}

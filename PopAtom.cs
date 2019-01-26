@@ -82,7 +82,7 @@ namespace PopX
 			return sz;
 		}
 
-		public static int Get64(byte a, byte b, byte c, byte d, byte e, byte f, byte g, byte h)
+		public static long Get64(byte a, byte b, byte c, byte d, byte e, byte f, byte g, byte h)
 		{
 			int sz = h << 0;
 			sz += g << 8;
@@ -92,7 +92,7 @@ namespace PopX
 			sz += c << 40;
 			sz += b << 48;
 			sz += a << 56;
-			return sz;
+			return (long)sz;
 		}
 
 
@@ -314,7 +314,11 @@ namespace PopX
 			//	verify size
 			var EndPos = Start + Atom.DataSize;
 			if (EndPos > Data.Length)
-				throw new System.Exception("Atom end position " + (EndPos) + " out of range of data " + Data.Length);
+			{
+				//	if streaming/fragmented mp4, dont abort after mdat
+				if ( Atom.Fourcc != "mdat")
+					throw new System.Exception("Atom " + Atom.Fourcc + " end position " + (EndPos) + " out of range of data " + Data.Length);
+			}
 
 			Atom.FileOffset = (uint)Start;
 			return Atom;
