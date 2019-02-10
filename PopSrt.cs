@@ -42,8 +42,8 @@ namespace PopX
 
 			//	forgive me.
 			var Lines = SubtitleChunk.Split(new string[] { "\n" }, System.StringSplitOptions.None);
-			if (Lines.Length != 4)
-				throw new System.Exception("Expected 4 (got " + Lines.Length + ") lines in the subtitle chunk: " + SubtitleChunk);
+			if (Lines.Length != 3)
+				throw new System.Exception("Expected 3 (got " + Lines.Length + ") lines in the subtitle chunk: " + SubtitleChunk);
 
 			var Subtitle = new Subtitle();
 			Subtitle.SubtitleIndex = int.Parse(Lines[0]);
