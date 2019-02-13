@@ -459,29 +459,6 @@ namespace PopX
 		}
 
 
-		static TAtom? GetNextAtom(byte[] Data, long Start)
-		{
-			//	no more data!
-			if (Start >= Data.Length)
-				return null;
-			
-			var AtomData = new byte[TAtom.HeaderSize];
-			Array.Copy( Data, Start, AtomData, 0, AtomData.Length);
-
-			//	let it throw(TM)
-			var Atom = new TAtom();
-			Atom.Set(AtomData);
-
-			//	todo: can we verify the fourcc? lets check the spec if the characters have to be ascii or something
-			//	verify size
-			var EndPos = Start + Atom.DataSize;
-			if (EndPos > Data.Length)
-				throw new System.Exception("Atom end position " + (EndPos) + " out of range of data " + Data.Length);
-
-			Atom.FileOffset = (uint)Start;
-			return Atom;
-		}
-
 		public static void Parse(string Filename, System.Action<TTrack> EnumTrack)
 		{
 			var FileData = File.ReadAllBytes(Filename);
@@ -904,7 +881,7 @@ namespace PopX
 					//	gr: these are the quicktime headers I think
 					var QuicktimeHeaderSize = 86;
 					var Start = Atom.FileOffset + OffsetStart + QuicktimeHeaderSize;
-					var AvccAtom = GetNextAtom(FileData, Start);
+					var AvccAtom = PopX.Atom.GetNextAtom(FileData, Start);
 					SampleDescription.AvccAtom = AvccAtom;
 					if ( AvccAtom.HasValue )
 						SampleDescription.AvccAtomData = AvccAtom.Value.GetAtomData(FileData);
