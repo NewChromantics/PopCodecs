@@ -33,23 +33,38 @@ namespace PopX
 			get { return FileOffset + HeaderSize; }
 		}
 
-		public void Set(byte[] Data8)
+		public void Init(byte[] Data8,System.Func<byte[]> GetNext8=null)
 		{
-			//Size = BitConverter.ToUInt32(new byte[] { Data8[0], Data8[1], Data8[2], Data8[3] }.Reverse().ToArray(), 0);
-			int sz = Data8[3] << 0;
-			sz += Data8[2] << 8;
-			sz += Data8[1] << 16;
-			sz += Data8[0] << 24;
-			DataSize = (uint)sz;
+			DataSize = Atom.Get32(Data8);
 
-			//	todo: long length;
+			//	size == 0 Is okay?
+			//	not come across an example to test yet
+			//	https://developer.apple.com/library/archive/documentation/QuickTime/QTFF/QTFFChap1/qtff1.html
+			//	0, which is allowed only for a top-level atom, designates the last atom in the file and indicates that the atom extends to the end of the file.
+
 			//	https://msdn.microsoft.com/en-us/library/ff469478.aspx
 			//	If the value of the TrunBoxLength field is % 00.00.00.01, the TrunBoxLongLength field MUST be present.
 
 			Fourcc = Encoding.ASCII.GetString(new byte[] { Data8[4], Data8[5], Data8[6], Data8[7] });
 
-			if (DataSize <= 0)
-				throw new System.Exception("Atom with invalid data size of " + DataSize);
+			//	if the data size is 1, it's the extended type of 64 bit, which comes after type
+			//	https://developer.apple.com/library/archive/documentation/QuickTime/QTFF/QTFFChap1/qtff1.html#//apple_ref/doc/uid/TP40000939-CH203-38950
+			if (DataSize == 1)
+			{
+				try
+				{
+					var Size64Bytes = GetNext8();
+					DataSize = Atom.Get64(Size64Bytes);
+				}
+				catch(System.Exception e)
+				{
+					throw new System.Exception("Error fetching 64-bit size in atom: " + e.Message);
+				}
+			}
+
+
+			if (DataSize <= 8)
+				throw new System.Exception("Atom with invalid data size of " + DataSize + " (cannot be <8 bytes)");
 		}
 
 		//	get data after header
@@ -98,6 +113,17 @@ namespace PopX
 			sz += a << 56;
 			return (long)sz;
 		}
+
+		public static int Get32(byte[] Bytes, int StartIndex = 0)
+		{
+			return Get32(Bytes[StartIndex++], Bytes[StartIndex++], Bytes[StartIndex++], Bytes[StartIndex++]);
+		}
+
+		public static long Get64(byte[] Bytes, int StartIndex = 0)
+		{
+			return Get64(Bytes[StartIndex++], Bytes[StartIndex++], Bytes[StartIndex++], Bytes[StartIndex++], Bytes[StartIndex++], Bytes[StartIndex++], Bytes[StartIndex++], Bytes[StartIndex++]);
+		}
+
 
 
 
@@ -301,7 +327,7 @@ namespace PopX
 		}
 
 
-		static TAtom? GetNextAtom(byte[] Data, long Start)
+		public static TAtom? GetNextAtom(byte[] Data, long Start)
 		{
 			//	no more data!
 			if (Start >= Data.Length)
@@ -310,9 +336,19 @@ namespace PopX
 			var AtomData = new byte[TAtom.HeaderSize];
 			Array.Copy( Data, Start, AtomData, 0, AtomData.Length);
 
+			//	if extended size is requested, we eat 8 more bytes
+			System.Func<byte[]> GetNext8 = () =>
+			{
+				var AtomExtData = new byte[8];
+				var ExtStart = Start + AtomData.Length;
+				Array.Copy(Data, ExtStart, AtomExtData, 0, AtomExtData.Length);
+				Start += 8;
+				return AtomExtData;
+			};
+
 			//	let it throw(TM)
 			var Atom = new TAtom();
-			Atom.Set(AtomData);
+			Atom.Init(AtomData, GetNext8);
 
 			//	todo: can we verify the fourcc? lets check the spec if the characters have to be ascii or something
 			//	verify size
@@ -358,6 +394,7 @@ namespace PopX
 
 				if (Atom.DataSize == 1)
 					throw new System.Exception("Extended Atom size found, not yet handled");
+
 				//i = (int)(Atom.Offset + Atom.Length + 1);
 				var NextPosition = Atom.FileOffset + Atom.DataSize;
 				if (i == NextPosition)
