@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -15,6 +15,13 @@ namespace PopX
 		{
 			var ChildArray = new byte[Count];
 			System.Array.Copy(ParentArray, Start, ChildArray, 0, Count);
+			return ChildArray;
+		}
+
+		static public T[] SubArray<T>(this List<T> ParentArray, long Start, long Count)
+		{
+			var ChildArray = new T[Count];
+			ParentArray.CopyTo((int)Start, ChildArray, (int)0, (int)Count);
 			return ChildArray;
 		}
 	}
