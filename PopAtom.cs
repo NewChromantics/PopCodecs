@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -63,7 +63,7 @@ namespace PopX
 			}
 
 
-			if (DataSize <= 8)
+			if (DataSize < 8)
 				throw new System.Exception("Atom with invalid data size of " + DataSize + " (cannot be <8 bytes)");
 		}
 
