@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -469,13 +469,85 @@ namespace PopX
 		public static void Parse(string Filename, System.Action<TTrack> EnumTrack)
 		{
 			var FileData = File.ReadAllBytes(Filename);
-			Parse(FileData, EnumTrack);
+			long BytesRead;
+			Parse(FileData, out BytesRead, EnumTrack);
 		}
 
-		public static void Parse(byte[] FileData, System.Action<TTrack> EnumTrack)
+		//	this interface lets you parse an mp4 asynchronously.
+		//	remember, all file position offsets in the atoms are relative to the data you input!
+		public static void ParseNextAtom(byte[] FileData, out long BytesRead, System.Action<List<TTrack>> EnumTracks,System.Action<TAtom> EnumMdat)
 		{
-			var Length = FileData.Length;
+			long FilePos = 0;
+			var NextAtom = PopX.Atom.GetNextAtom(FileData, FilePos);
+			if (!NextAtom.HasValue)
+				throw new System.Exception("Failed to get next atom");
+			var NewAtom = NextAtom.Value;
 
+
+
+			//	handle the atom
+			if (NewAtom.Fourcc == "moov")
+			{
+				List<TTrack> Tracks = null;
+				TMovieHeader? Header;
+
+				//	decode moov (tracks, sample data etc)
+				var MoovAtom = NewAtom;
+				DecodeAtom_Moov(out Tracks, out Header, MoovAtom, FileData);
+
+				EnumTracks(Tracks);
+			}
+			else if ( NewAtom.Fourcc == "moof")
+			{
+				TMovieHeader? Header;
+
+				var MoofAtom = NewAtom;
+				var MdatIdent = 999;    //	currently just indexed
+
+				List<TTrack> MoofTracks;
+				DecodeAtom_Moof(out MoofTracks, out Header, MoofAtom, FileData, MdatIdent);
+
+				EnumTracks(MoofTracks);
+				/*
+				//	temporarily correct sample offsets
+				//	todo: change accessor/give accessor
+				var Mdat = MdatAtoms[MdatIdent];
+				if (MoofTrack.Samples != null)
+				{
+					for (var mtsi = 0; mtsi < MoofTrack.Samples.Count; mtsi++)
+					{
+						var Sample = MoofTrack.Samples[mtsi];
+						Sample.DataPosition += Mdat.FileDataOffset;
+						MoofTrack.Samples[mtsi] = Sample;
+					}
+				}
+				*/
+				/*
+				while (Tracks.Count < mfi)
+				{
+					Tracks.Add(new TTrack());
+				}
+				if (MoofTrack.SampleDescriptions != null)
+					Tracks[mfi].SampleDescriptions.AddRange(MoofTrack.SampleDescriptions);
+				if (MoofTrack.Samples != null)
+					Tracks[mfi].Samples.AddRange(MoofTrack.Samples);
+				*/
+
+			}
+			else if ( NewAtom.Fourcc == "mdat" )
+			{
+				//	just followed a moov or moof
+				//	enum it with appropriate track/sample meta
+				EnumMdat(NewAtom);
+			}
+
+			//	update if nothing failed
+			BytesRead = FilePos + NewAtom.DataSize;
+		}
+
+		//	todo: replace with calls to ParseNextAtom() until data exhasted
+		public static void Parse(byte[] FileData, out long BytesRead,System.Action<TTrack> EnumTrack)
+		{
 			//	decode the header atoms
 			//TAtom? ftypAtom = null;
 
@@ -496,8 +568,13 @@ namespace PopX
 					Debug.Log("Ignored atom: " + Atom.Fourcc);
 			};
 
+			//	increment during parse?
+			BytesRead = 0;
+
 			//	read the root atoms
-			PopX.Atom.Parse(FileData, EnumRootAtoms);
+			long FilePosition = 0;
+			PopX.Atom.Parse(FileData, ref FilePosition, EnumRootAtoms);
+			BytesRead = FilePosition;
 
 			//	dont even need mdat!
 			var Errors = new List<string>();
@@ -559,6 +636,12 @@ namespace PopX
 				EnumTrack(t);
 		}
 
+		public static void Parse(byte[] FileData, System.Action<TTrack> EnumTrack)
+		{
+			long BytesRead;
+			Parse(FileData, out BytesRead, EnumTrack);
+		}
+
 
 		static void DecodeAtom_Moov(out List<TTrack> Tracks,out TMovieHeader? MovieHeader,TAtom Moov, byte[] FileData)
 		{
@@ -591,7 +674,7 @@ namespace PopX
 		//	https://msdn.microsoft.com/en-us/library/ff469287.aspx
 		static void DecodeAtom_Moof(out List<TTrack> Tracks, out TMovieHeader? MovieHeader, TAtom Moov, byte[] FileData,int? MdatIdent)
 		{
-			var NewTracks = new List<TTrack>();
+			var MoofTracks = new List<TTrack>();
 			MovieHeader = null;
 			/*
 			//	get header first
@@ -610,11 +693,11 @@ namespace PopX
 				{
 					var Track = new TTrack();
 					DecodeAtom_TrackFragment(ref Track, Atom, null, MdatIdent, TimeScale, FileData);
-					NewTracks.Add(Track);
+					MoofTracks.Add(Track);
 				}
 			};
 			Atom.DecodeAtomChildren(EnumMoovChildAtom, Moov, FileData);
-			Tracks = NewTracks;
+			Tracks = MoofTracks;
 		}
 
 		//	trun
