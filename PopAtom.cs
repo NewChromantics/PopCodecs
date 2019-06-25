@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -330,6 +330,7 @@ namespace PopX
 		public static TAtom? GetNextAtom(byte[] Data, long Start)
 		{
 			//	no more data!
+			//	gr: parent should figure out when we've reached the end, not pre-bail
 			if (Start >= Data.Length)
 				return null;
 			
@@ -367,18 +368,20 @@ namespace PopX
 		public static void Parse(string Filename, System.Action<TAtom> EnumAtom)
 		{
 			var FileData = File.ReadAllBytes(Filename);
-			Parse(FileData, EnumAtom);
+			long FilePosition = 0;
+			Parse(FileData, ref FilePosition, EnumAtom);
 		}
 
-		public static void Parse(byte[] FileData, System.Action<TAtom> EnumAtom)
+		public static void Parse(byte[] FileData, ref long FilePosition,System.Action<TAtom> EnumAtom)
 		{
 			var Length = FileData.Length;
 
+			//	gr: need to handle ot of data
 			//	read first atom
-			long i = 0;
-			while (i < FileData.Length)
+			//while (FilePosition < FileData.Length)
+			while(true)
 			{
-				var NextAtom = GetNextAtom(FileData, i);
+				var NextAtom = GetNextAtom(FileData, FilePosition);
 				if (NextAtom == null)
 					break;
 
@@ -397,9 +400,9 @@ namespace PopX
 
 				//i = (int)(Atom.Offset + Atom.Length + 1);
 				var NextPosition = Atom.FileOffset + Atom.DataSize;
-				if (i == NextPosition)
+				if (FilePosition >= NextPosition)
 					throw new System.Exception("Infinite loop averted");
-				i = (int)NextPosition;
+				FilePosition = NextPosition;
 			}
 		}
 
