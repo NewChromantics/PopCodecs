@@ -62,6 +62,23 @@ namespace PopX
 			return SubData;
 		}
 
+		public static float Fixed1616ToFloat(int Fixed32)
+		{
+			var Int = Fixed32 >> 16;
+			var FracMax = (1<<16)-1;
+			var Frac = Fixed32 & FracMax;
+			var Fracf = Frac / FracMax;
+			return Int + Fracf;
+		}
+
+		public static float Fixed230ToFloat(int Fixed32)
+		{
+			var Int = Fixed32 >> 30;
+			var FracMax = (1 << 30) - 1;
+			var Frac = Fixed32 & FracMax;
+			var Fracf = Frac / FracMax;
+			return Int + Fracf;
+		}
 
 		//	known mpeg4 atoms
 		/*
@@ -423,10 +440,20 @@ namespace PopX
 				throw new System.Exception("Expected Version 0 or 1 for MVHD. If neccessary can probably continue without timing info!");
 			}
 			/*var PreferredRate =*/ Get32(AtomData,ref Offset);
-			/*var PreferredVolume =*/ Get16(AtomData,ref Offset);	//	8.8 fixed point volume
-			var Reserved = AtomData.SubArray(Offset, 10);	Offset += 10;
-			var Matrix = AtomData.SubArray(Offset, 36); Offset += 36;
-			/*var PreviewTime =*/ Get32(AtomData,ref Offset);
+			/*var PreferredVolume =*/ Get16(AtomData,ref Offset);   //	8.8 fixed point volume
+			var Reserved = GetN(AtomData, 10, ref Offset);
+
+			var Matrix_a = Get32(AtomData, ref Offset);
+			var Matrix_b = Get32(AtomData, ref Offset);
+			var Matrix_u = Get32(AtomData, ref Offset);
+			var Matrix_c = Get32(AtomData, ref Offset);
+			var Matrix_d = Get32(AtomData, ref Offset);
+			var Matrix_v = Get32(AtomData, ref Offset);
+			var Matrix_x = Get32(AtomData, ref Offset);
+			var Matrix_y = Get32(AtomData, ref Offset);
+			var Matrix_w = Get32(AtomData, ref Offset);
+
+			/*var PreviewTime =*/Get32(AtomData,ref Offset);
 			var PreviewDuration = Get32(AtomData,ref Offset);
 			/*var PosterTime =*/ Get32(AtomData,ref Offset);
 			/*var SelectionTime =*/ Get32(AtomData,ref Offset);
@@ -435,21 +462,28 @@ namespace PopX
 			/*var NextTrackId =*/ Get32(AtomData,ref Offset);
 
 			foreach (var Zero in Reserved)
+			{
 				if (Zero != 0)
 					Debug.LogWarning("Reserved value " + Zero + " is not zero");
+			}
 
 			//	actually a 3x3 matrix, but we make it 4x4 for unity
 			//	gr: do we need to transpose this? docs don't say row or column major :/
 			//	wierd element labels, right? spec uses them.
-			var a = Matrix[0];
-			var b = Matrix[1];
-			var u = Matrix[2];
-			var c = Matrix[3];
-			var d = Matrix[4];
-			var v = Matrix[5];
-			var x = Matrix[6];
-			var y = Matrix[7];
-			var w = Matrix[8];
+
+			//	gr: matrixes arent simple
+			//		https://developer.apple.com/library/archive/documentation/QuickTime/QTFF/QTFFChap4/qtff4.html#//apple_ref/doc/uid/TP40000939-CH206-18737
+			//	All values in the matrix are 32 - bit fixed-point numbers divided as 16.16, except for the { u, v, w}
+			//	column, which contains 32 - bit fixed-point numbers divided as 2.30.Figure 5 - 1 and Figure 5 - 2 depict how QuickTime uses matrices to transform displayed objects.
+			var a = Fixed1616ToFloat(Matrix_a);
+			var b = Fixed1616ToFloat(Matrix_b);
+			var u = Fixed230ToFloat(Matrix_u);
+			var c = Fixed1616ToFloat(Matrix_c);
+			var d = Fixed1616ToFloat(Matrix_d);
+			var v = Fixed230ToFloat(Matrix_v);
+			var x = Fixed1616ToFloat(Matrix_x);
+			var y = Fixed1616ToFloat(Matrix_y);
+			var w = Fixed230ToFloat(Matrix_w);
 			var MtxRow0 = new Vector4(a, b, u, 0);
 			var MtxRow1 = new Vector4(c, d, v, 0);
 			var MtxRow2 = new Vector4(x, y, w, 0);
