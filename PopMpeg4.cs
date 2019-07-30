@@ -144,16 +144,16 @@ namespace PopX
 		static List<ChunkMeta> GetChunkMetas(TAtom Atom, byte[] FileData)
 		{
 			var Metas = new List<ChunkMeta>();
-			var AtomData = new byte[Atom.DataSize];
-			Array.Copy(FileData, Atom.FileOffset, AtomData, 0, AtomData.Length);
+			var AtomData = Atom.GetAtomData(FileData);
 
+			var Offset = 0;
 			//	https://developer.apple.com/library/content/documentation/QuickTime/QTFF/QTFFChap2/qtff2.html
-			//var Version = AtomData[8];
-			/*var Flags =*/ PopX.Atom.Get24(AtomData[9], AtomData[10], AtomData[11]);
-			var EntryCount = PopX.Atom.Get32(AtomData[12], AtomData[13], AtomData[14], AtomData[15]);
+			var Version = Get8(AtomData, ref Offset);
+			/*var Flags =*/ Get24(AtomData, ref Offset);
+			var EntryCount = Get32(AtomData, ref Offset);
 
 			var MetaSize = 3 * 4;
-			for (int i = 16; i < AtomData.Length; i += MetaSize)
+			for (int i = Offset; i < AtomData.Length; i += MetaSize)
 			{
 				var Meta = new ChunkMeta(AtomData, i);
 				Metas.Add(Meta);
@@ -186,25 +186,26 @@ namespace PopX
 			}
 
 			var Offsets = new List<long>();
-			var AtomData = new byte[Atom.DataSize];
-			Array.Copy(FileData, Atom.FileOffset, AtomData, 0, AtomData.Length);
+			var AtomData = Atom.GetAtomData(FileData);
 
+			var Offset = 0;
+			var Version = Get8(AtomData, ref Offset);
 			//var Version = AtomData[8];
-			/*var Flags = */Get24(AtomData[9], AtomData[10], AtomData[11]);
-			var EntryCount = Get32(AtomData[12], AtomData[13], AtomData[14], AtomData[15]);
+			/*var Flags = */Get24(AtomData, ref Offset);
+			var EntryCount = Get32(AtomData, ref Offset);
 			if (OffsetSize <= 0)
 				throw new System.Exception("Invalid offset size: " + OffsetSize);
-			for (int i = 16; i < AtomData.Length; i += OffsetSize)
+			for (int i = Offset; i < AtomData.Length; i += OffsetSize)
 			{
 				if (OffsetSize * 8 == 32)
 				{
-					var Offset = Get32(AtomData[i + 0], AtomData[i + 1], AtomData[i + 2], AtomData[i + 3]);
-					Offsets.Add(Offset);
+					var ChunkOffset = Get32(AtomData[i + 0], AtomData[i + 1], AtomData[i + 2], AtomData[i + 3]);
+					Offsets.Add(ChunkOffset);
 				}
 				else if (OffsetSize * 8 == 64)
 				{
-					var Offset = Get64(AtomData[i + 0], AtomData[i + 1], AtomData[i + 2], AtomData[i + 3], AtomData[i + 4], AtomData[i + 5], AtomData[i + 6], AtomData[i + 7]);
-					Offsets.Add(Offset);
+					var ChunkOffset = Get64(AtomData[i + 0], AtomData[i + 1], AtomData[i + 2], AtomData[i + 3], AtomData[i + 4], AtomData[i + 5], AtomData[i + 6], AtomData[i + 7]);
+					Offsets.Add(ChunkOffset);
 				}
 			}
 			if (Offsets.Count() != EntryCount)
@@ -226,15 +227,15 @@ namespace PopX
 
 			//	read table and set keyframed
 			var Atom = SyncSamplesAtom.Value;
-			var AtomData = new byte[Atom.DataSize];
-			Array.Copy(FileData, Atom.FileOffset, AtomData, 0, AtomData.Length);
+			var AtomData = Atom.GetAtomData(FileData);
 
-			//var Version = AtomData[8];
-			/*var Flags =*/ Get24(AtomData[9], AtomData[10], AtomData[11]);
-			var EntryCount = Get32(AtomData[12], AtomData[13], AtomData[14], AtomData[15]);
+			var Offset = 0;
+			var Version = Get8( AtomData, ref Offset);
+			/*var Flags =*/ Get24(AtomData, ref Offset);
+			var EntryCount = Get32(AtomData, ref Offset);
 
 			//	each entry in the table is the size of a sample (and one chunk can have many samples)
-			var StartOffset = 16;
+			var StartOffset = Offset;
 
 			if (EntryCount > 0)
 			{
@@ -268,13 +269,13 @@ namespace PopX
 		{
 			var Durations = new List<int>();
 
-			var AtomData = new byte[Atom.DataSize];
-			Array.Copy(FileData, Atom.FileOffset, AtomData, 0, AtomData.Length);
+			var AtomData = Atom.GetAtomData(FileData);
 
-			//var Version = AtomData[8];
-			/*var Flags =*/ Get24(AtomData[9], AtomData[10], AtomData[11]);
-			var EntryCount = Get32(AtomData[12], AtomData[13], AtomData[14], AtomData[15]);
-			var StartOffset = 16;
+			var Offset = 0;
+			var Version = Get8(AtomData, ref Offset);
+			/*var Flags =*/ Get24(AtomData, ref Offset);
+			var EntryCount = Get32(AtomData, ref Offset);
+			var StartOffset = Offset;
 
 			//	read durations as we go
 			for (int i = StartOffset; i < AtomData.Length; i += 4 + 4)
@@ -319,14 +320,14 @@ namespace PopX
 		static List<long> GetSampleSizes(TAtom Atom, byte[] FileData)
 		{
 			var Sizes = new List<long>();
-			var AtomData = new byte[Atom.DataSize];
-			Array.Copy(FileData, Atom.FileOffset, AtomData, 0, AtomData.Length);
+			var AtomData = Atom.GetAtomData(FileData);
 
 			//	https://developer.apple.com/library/content/documentation/QuickTime/QTFF/QTFFChap2/qtff2.html
-			var Version = AtomData[8];
-			var Flags = Get24(AtomData[9], AtomData[10], AtomData[11]);
-			var SampleSize = Get32(AtomData[12], AtomData[13], AtomData[14], AtomData[15]);
-			var EntryCount = Get32(AtomData[16], AtomData[17], AtomData[18], AtomData[19]);
+			var Offset = 0;
+			var Version = Get8( AtomData, ref Offset );
+			var Flags = Get24(AtomData, ref Offset);
+			var SampleSize = Get32(AtomData, ref Offset);
+			var EntryCount = Get32(AtomData, ref Offset);
 
 			//	if size specified, they're all this size
 			if (SampleSize != 0)
@@ -337,7 +338,7 @@ namespace PopX
 			}
 
 			//	each entry in the table is the size of a sample (and one chunk can have many samples)
-			var SampleSizeStart = 20;
+			var SampleSizeStart = Offset;
 
 			if (EntryCount > 0)
 			{
@@ -366,11 +367,11 @@ namespace PopX
 
 		static TMediaHeader DecodeAtom_MediaHeader(TAtom Atom, byte[] FileData)
 		{
-			var AtomData = FileData.SubArray(Atom.FileOffset, Atom.DataSize);
+			var AtomData = Atom.GetAtomData(FileData);
 
-			//var Version = AtomData[8];
-			var Offset = 9;
-			/*var Flags =*/ Get24(AtomData, ref Offset);
+			var Offset = 0;
+			var Version = Get8(AtomData,ref Offset);
+			/*var Flags =*/Get24(AtomData, ref Offset);
 			var CreationTime = Get32(AtomData, ref Offset);
 			var ModificationTime = Get32(AtomData, ref Offset);
 			var TimeScale = Get32(AtomData, ref Offset);
@@ -391,11 +392,11 @@ namespace PopX
 
 		static TMovieHeader DecodeAtom_MovieHeader(TAtom Atom,byte[] FileData)
 		{
-			var AtomData = FileData.SubArray(Atom.FileOffset, Atom.DataSize);
+			var AtomData = Atom.GetAtomData(FileData);
 
 			//	https://developer.apple.com/library/content/documentation/QuickTime/QTFF/art/qt_l_095.gif
-			var Version = AtomData[8];
-			var Offset = 9;
+			var Offset = 0;
+			var Version = Get8(AtomData,ref Offset);
 			var Flags = Get24(AtomData,ref Offset);
 
 			//	hololens had what looked like 64 bit timestamps...
@@ -542,7 +543,7 @@ namespace PopX
 			}
 
 			//	update if nothing failed
-			BytesRead = FilePos + NewAtom.DataSize;
+			BytesRead = FilePos + NewAtom.AtomSize;
 		}
 
 		//	todo: replace with calls to ParseNextAtom() until data exhasted
@@ -703,14 +704,13 @@ namespace PopX
 		//	trun
 		static List<TSample> DecodeAtom_FragmentSampleTable(TAtom Atom, float TimeScale, byte[] FileData,int? MDatIdent)
 		{
-			var AtomData = FileData.SubArray(Atom.FileOffset, Atom.DataSize);
+			var AtomData = Atom.GetAtomData(FileData);
 
 			//	this stsd description isn't well documented on the apple docs
 			//	http://xhelmboyx.tripod.com/formats/mp4-layout.txt
 			//	https://stackoverflow.com/a/14549784/355753
 			//var Version = AtomData[8];
-
-			var Offset = 8;
+			var Offset = 0;
 			var Flags = Get32(AtomData, ref Offset);
 			var EntryCount = Get32(AtomData, ref Offset);
 
@@ -933,13 +933,13 @@ namespace PopX
 
 		static List<TTrackSampleDescription> GetTrackSampleDescriptions(TAtom Atom, byte[] FileData)
 		{
-			var AtomData = FileData.SubArray(Atom.FileOffset, Atom.DataSize);
+			var AtomData = Atom.GetAtomData(FileData);
 
 			//	this stsd description isn't well documented on the apple docs
 			//	http://xhelmboyx.tripod.com/formats/mp4-layout.txt
 			//	https://stackoverflow.com/a/14549784/355753
-			//var Version = AtomData[8];
-			var Offset = 9;
+			var Offset = 0;
+			var Version = Get8(AtomData, ref Offset);
 			/*var Flags = */Get24(AtomData, ref Offset);
 			var EntryCount = Get32(AtomData, ref Offset); 
 
@@ -950,8 +950,7 @@ namespace PopX
 				var OffsetStart = Offset;
 				var Size = Get32(AtomData, ref Offset);
 				var Format = Get8x4(AtomData, ref Offset);
-				//var Reserved = AtomData.SubArray(Offset, 6);
-				Offset += 6;
+				var Reserved = GetN(AtomData, 6, ref Offset);
 				var DataReferenceIndex = Get16(AtomData, ref Offset);
 
 				//	read the remaining data
@@ -970,7 +969,7 @@ namespace PopX
 				{
 					//	gr: these are the quicktime headers I think
 					var QuicktimeHeaderSize = 86;
-					var Start = Atom.FileOffset + OffsetStart + QuicktimeHeaderSize;
+					var Start = Atom.FileOffset + QuicktimeHeaderSize + HeaderSize;
 					var AvccAtom = PopX.Atom.GetNextAtom(FileData, Start);
 					SampleDescription.AvccAtom = AvccAtom;
 					if ( AvccAtom.HasValue )

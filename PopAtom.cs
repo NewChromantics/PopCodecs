@@ -26,16 +26,18 @@ namespace PopX
 	{
 		public const long HeaderSize = 8;
 		public string Fourcc;
-		public long FileOffset;		//	start of atom
-		public long DataSize;
-		public long FileDataOffset	//	start of data
+		public long FileOffset;			//	start of atom
+		public long AtomSize;			//	total size of atom including headers
+		public long HeaderExtraSize;	//	MinHeaderSize + length
+		public long DataSize			{ get { return AtomSize - HeaderSize - HeaderExtraSize; }}
+		public long FileDataOffset		//	start of data
 		{
-			get { return FileOffset + HeaderSize; }
+			get { return FileOffset + HeaderSize + HeaderExtraSize; }
 		}
 
 		public void Init(byte[] Data8,System.Func<byte[]> GetNext8=null)
 		{
-			DataSize = Atom.Get32(Data8);
+			AtomSize = Atom.Get32(Data8);
 
 			//	size == 0 Is okay?
 			//	not come across an example to test yet
@@ -49,12 +51,13 @@ namespace PopX
 
 			//	if the data size is 1, it's the extended type of 64 bit, which comes after type
 			//	https://developer.apple.com/library/archive/documentation/QuickTime/QTFF/QTFFChap1/qtff1.html#//apple_ref/doc/uid/TP40000939-CH203-38950
-			if (DataSize == 1)
+			if (AtomSize == 1)
 			{
 				try
 				{
 					var Size64Bytes = GetNext8();
-					DataSize = Atom.Get64(Size64Bytes);
+					HeaderExtraSize += 8;
+					AtomSize = Atom.Get64(Size64Bytes);
 				}
 				catch(System.Exception e)
 				{
@@ -62,15 +65,17 @@ namespace PopX
 				}
 			}
 
+			if (AtomSize < HeaderSize + HeaderExtraSize)
+				throw new System.Exception("Atom size(" + AtomSize + ") invalid, less than header size (" + HeaderSize + "+" + HeaderExtraSize + ")");
 
-			if (DataSize < 8)
+			if (AtomSize < 8)
 				throw new System.Exception("Atom with invalid data size of " + DataSize + " (cannot be <8 bytes)");
 		}
 
 		//	get data after header
 		public byte[] GetAtomData(byte[] FileData)
 		{
-			return FileData.SubArray(FileOffset + HeaderSize, DataSize - HeaderSize);
+			return FileData.SubArray(FileDataOffset, DataSize );
 		}
 	}
 
@@ -158,7 +163,7 @@ namespace PopX
 
 				DecodeAtomRecursive(EnumAtom, Atom, FileData);
 
-				AtomStart = Atom.FileOffset + Atom.DataSize;
+				AtomStart = Atom.FileOffset + Atom.AtomSize;
 			}
 		}
 
@@ -178,7 +183,7 @@ namespace PopX
 		static public void DecodeAtomChildren(System.Action<TAtom> EnumAtom, TAtom Moov, byte[] FileData)
 		{
 			//	decode moov children (mvhd, trak, udta)
-			var MoovEnd = Moov.FileOffset + Moov.DataSize;
+			var MoovEnd = Moov.FileOffset + Moov.AtomSize;
 			for (var AtomStart = Moov.FileOffset + TAtom.HeaderSize; AtomStart < MoovEnd; AtomStart += 0)
 			{
 				var NextAtom = GetNextAtom(FileData, AtomStart);
@@ -194,7 +199,7 @@ namespace PopX
 				{
 					Debug.LogException(e);
 				}
-				AtomStart = Atom.FileOffset + Atom.DataSize;
+				AtomStart = Atom.FileOffset + Atom.AtomSize;
 			}
 		}
 
@@ -216,8 +221,7 @@ namespace PopX
 		static List<SampleMeta> GetSampleMetas(TAtom Atom, byte[] FileData)
 		{
 			var Metas = new List<SampleMeta>();
-			var AtomData = new byte[Atom.DataSize];
-			Array.Copy(FileData, Atom.FileOffset, AtomData, 0, AtomData.Length);
+			var AtomData = Atom.GetAtomData(FileData);
 
 			//	https://developer.apple.com/library/content/documentation/QuickTime/QTFF/QTFFChap2/qtff2.html
 			//var Version = AtomData[8];
@@ -256,8 +260,7 @@ namespace PopX
 			}
 
 			var Offsets = new List<long>();
-			var AtomData = new byte[Atom.DataSize];
-			Array.Copy(FileData, Atom.FileOffset, AtomData, 0, AtomData.Length);
+			var AtomData = Atom.GetAtomData(FileData);
 
 			//var Version = AtomData[8];
 			/*var Flags = */Get24(AtomData[9], AtomData[10], AtomData[11]);
@@ -337,13 +340,11 @@ namespace PopX
 			var AtomData = new byte[TAtom.HeaderSize];
 			Array.Copy( Data, Start, AtomData, 0, AtomData.Length);
 
-			//	if extended size is requested, we eat 8 more bytes
 			System.Func<byte[]> GetNext8 = () =>
 			{
 				var AtomExtData = new byte[8];
 				var ExtStart = Start + AtomData.Length;
 				Array.Copy(Data, ExtStart, AtomExtData, 0, AtomExtData.Length);
-				Start += 8;
 				return AtomExtData;
 			};
 
@@ -353,7 +354,7 @@ namespace PopX
 
 			//	todo: can we verify the fourcc? lets check the spec if the characters have to be ascii or something
 			//	verify size
-			var EndPos = Start + Atom.DataSize;
+			var EndPos = Start + Atom.AtomSize;
 			if (EndPos > Data.Length)
 			{
 				//	if streaming/fragmented mp4, dont abort after mdat
@@ -395,11 +396,11 @@ namespace PopX
 					Debug.LogException(e);
 				}
 
-				if (Atom.DataSize == 1)
+				if (Atom.AtomSize == 1)
 					throw new System.Exception("Extended Atom size found, not yet handled");
 
 				//i = (int)(Atom.Offset + Atom.Length + 1);
-				var NextPosition = Atom.FileOffset + Atom.DataSize;
+				var NextPosition = Atom.FileOffset + Atom.AtomSize;
 				if (FilePosition >= NextPosition)
 					throw new System.Exception("Infinite loop averted");
 				FilePosition = NextPosition;
