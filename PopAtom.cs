@@ -26,7 +26,6 @@ namespace PopX
 	{
 		public const long HeaderSize = 8;
 		public string Fourcc;
-		public long FileOffset;			//	start of atom
 		public long AtomSize;			//	total size of atom including headers
 		public long HeaderExtraSize;	//	MinHeaderSize + length
 		public long DataSize			{ get { return AtomSize - HeaderSize - HeaderExtraSize; }}
@@ -146,8 +145,8 @@ namespace PopX
 
 		static void DecodeAtomRecursive(System.Action<TAtom> EnumAtom, TAtom Moov, System.Func<long, byte[]> ReadData)
 		{
-			var AtomStart = Moov.FileOffset + TAtom.HeaderSize;
-			while (true)
+			int LoopSafety = 1000;
+			while (LoopSafety-- > 0)
 			{
 				var NextAtom = GetNextAtom(ReadData);
 				if (NextAtom == null)
@@ -160,10 +159,9 @@ namespace PopX
 				EnumAtom(Atom);
 
 				DecodeAtomRecursive(EnumAtom, Atom, ReadData);
-
-				AtomStart = Atom.FileOffset + Atom.AtomSize;
 			}
 		}
+
 
 		static public TAtom? GetChildAtom(TAtom ParentAtom, string Fourcc, System.Func<long, byte[]> ReadData)
 		{
@@ -174,31 +172,34 @@ namespace PopX
 					MatchAtom = ChildAtom;
 			};
 		
-			DecodeAtomChildren(FindChild, ParentAtom, ReadData);
+			DecodeAtomChildren(FindChild, ParentAtom);
 			return MatchAtom;
 		}
 
-		static public void DecodeAtomChildren(System.Action<TAtom> EnumAtom, TAtom Moov, System.Func<long, byte[]> ReadData)
+		static public void DecodeAtomChildren(System.Action<TAtom> EnumAtom, TAtom Moov, System.Func<long, byte[]> ReadData=null)
 		{
-			//	decode moov children (mvhd, trak, udta)
-			var MoovEnd = Moov.FileOffset + Moov.AtomSize;
-			while(true)
-			//for (var AtomStart = Moov.FileOffset + TAtom.HeaderSize; AtomStart < MoovEnd; AtomStart += 0)
+			long MoovPos = 0;
+			System.Func<long, byte[]> ReadMoovData = (long DataSize) =>
 			{
-				var NextAtom = GetNextAtom(ReadData);
-				if (NextAtom == null)
+				if (MoovPos == Moov.AtomData.Length)
+					return null;
+
+				var ChildData = Moov.AtomData.SubArray(MoovPos, DataSize);
+				MoovPos += DataSize;
+				return ChildData;
+			};
+
+			//	decode moov children (mvhd, trak, udta)
+			int LoopSafety = 1000;
+			while (LoopSafety-- > 0)
+			{
+				//	when this throws, we're assuming we're out of data
+				var NextAtom = GetNextAtom(ReadMoovData);
+				if (!NextAtom.HasValue)
 					break;
 				var Atom = NextAtom.Value;
-				//Debug.Log("Found " + Atom.Fourcc);
-				try
-				{
-					EnumAtom(Atom);
-				}
-				catch (System.Exception e)
-				{
-					Debug.LogException(e);
-				}
-				//AtomStart = Atom.FileOffset + Atom.AtomSize;
+				Debug.Log("Found " + Atom.Fourcc);
+				EnumAtom(Atom);
 			}
 		}
 
@@ -288,8 +289,7 @@ namespace PopX
 		static List<long> GetSampleSizes(TAtom Atom, byte[] FileData)
 		{
 			var Sizes = new List<long>();
-			var AtomData = new byte[Atom.DataSize];
-			Array.Copy(FileData, Atom.FileOffset, AtomData, 0, AtomData.Length);
+			var AtomData = Atom.AtomData;
 
 			//	https://developer.apple.com/library/content/documentation/QuickTime/QTFF/QTFFChap2/qtff2.html
 			//var Version = AtomData[8];
@@ -331,7 +331,26 @@ namespace PopX
 
 		public static TAtom? GetNextAtom(System.Func<long, byte[]> ReadData)
 		{
-			var AtomData = ReadData(TAtom.HeaderSize);
+			byte[] AtomData = null;
+			try
+			{
+				AtomData = ReadData(TAtom.HeaderSize);
+				//	EOF
+				if (AtomData == null)
+					return null;
+			}
+			catch(System.ArgumentException e)
+			{
+				Debug.Log("Ran out of atom data" + e);
+				return null;
+			}
+			catch(System.Exception e)
+			{
+				Debug.Log("Ran out of atom data" + e);
+				//	assuming out of data
+				return null;
+			}
+
 
 			System.Func<byte[]> GetNext8 = () =>
 			{
@@ -374,7 +393,8 @@ namespace PopX
 			//	gr: need to handle ot of data
 			//	read first atom
 			//while (FilePosition < FileData.Length)
-			while(true)
+			int LoopSafety = 1000;
+			while(LoopSafety-->0)
 			{
 				var NextAtom = GetNextAtom(ReadData);
 				if (NextAtom == null)

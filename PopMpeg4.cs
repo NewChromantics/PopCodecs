@@ -688,7 +688,7 @@ namespace PopX
 					NewTracks.Add(Track);
 				}
 			};
-			Atom.DecodeAtomChildren(EnumMoovChildAtom, Moov, ReadData);
+			Atom.DecodeAtomChildren(EnumMoovChildAtom, Moov);
 			Tracks = NewTracks;
 		}
 
@@ -719,7 +719,7 @@ namespace PopX
 					MoofTracks.Add(Track);
 				}
 			};
-			Atom.DecodeAtomChildren(EnumMoovChildAtom, Moov, ReadData);
+			Atom.DecodeAtomChildren(EnumMoovChildAtom, Moov);
 			Tracks = MoofTracks;
 		}
 
@@ -829,7 +829,7 @@ namespace PopX
 					SamplePresentationTimeOffsetsAtom = Atom;
 			};
 		
-			PopX.Atom.DecodeAtomChildren(EnumStblAtom, StblAtom, ReadData);
+			PopX.Atom.DecodeAtomChildren(EnumStblAtom, StblAtom);
 
 			//	work out samples from atoms!
 			if (SampleSizesAtom == null)
@@ -878,7 +878,7 @@ namespace PopX
 
 			//	superfolous data
 			var Chunks = new List<TSample>();
-			long? MdatEnd = (MdatAtom.HasValue) ? (MdatAtom.Value.FileOffset + MdatAtom.Value.DataSize) : (long?)null;
+			long? MdatEnd = (MdatAtom.HasValue) ? (MdatAtom.Value.DataSize) : (long?)null;
 			for (int i = 0; i < ChunkOffsets.Count; i++)
 			{
 				var ThisChunkOffset = ChunkOffsets[i];
@@ -947,7 +947,7 @@ namespace PopX
 		{
 			public string Fourcc;   //	gr: this is 4 bytes, but might not actually be a fourcc?
 			public int DataReferenceIndex;
-			public byte[] Data;     //	codec specific data
+			//public byte[] Data;     //	codec specific data
 
 			public TAtom? AvccAtom;
 			public byte[] AvccAtomData;
@@ -967,6 +967,28 @@ namespace PopX
 
 			var SampleDescriptions = new List<TTrackSampleDescription>();
 
+
+			var TempAtom = new TAtom();
+			TempAtom.AtomData = AtomData.SubArray(Offset, AtomData.Length - Offset);
+
+			TAtom? AvccAtom = null;
+
+			Action<TAtom> EnumSubCodecs = (TAtom Child) =>
+			{
+				Debug.Log("EnumSubCodecs "+Child.Fourcc);
+				if (Child.Fourcc == "avcC")
+					AvccAtom = Child;
+			};
+
+			Action<TAtom> EnumCodecs = (TAtom Child) =>
+			{
+				Debug.Log("EnumCodecs " + Child.Fourcc);
+				if (Child.Fourcc == "avc1")
+					AvccAtom = Child;
+				//PopX.Atom.DecodeAtomChildren(EnumSubCodecs, Child);
+			};
+			PopX.Atom.DecodeAtomChildren(EnumCodecs, TempAtom);
+
 			for (int sd = 0; sd < EntryCount;	sd++ )
 			{
 				var OffsetStart = Offset;
@@ -983,23 +1005,33 @@ namespace PopX
 
 				var SampleDescription = new TTrackSampleDescription();
 				SampleDescription.DataReferenceIndex = DataReferenceIndex;
-				SampleDescription.Data = Data;
+				//SampleDescription.Data = Data;
+				if (AvccAtom.HasValue)
+					SampleDescription.AvccAtomData = AvccAtom.Value.AtomData.SubArray(86, 47);
 				SampleDescription.Fourcc = Encoding.ASCII.GetString(Format);
-
+				/*
 				//	gr: temp solution, rip off the header to get the encoder's header atom
 				if ( SampleDescription.Fourcc == "avc1" )
 				{
 					//	gr: these are the quicktime headers I think
 					var QuicktimeHeaderSize = 86;
-					var Start = Atom.FileOffset + QuicktimeHeaderSize + HeaderSize;
-					var AvccAtom = PopX.Atom.GetNextAtom(ReadData);
+					var Start = 0 + QuicktimeHeaderSize + HeaderSize;
+					//var Start = Atom.FileOffset + QuicktimeHeaderSize + HeaderSize;
+					System.Func<long, byte[]> ReadAvccData = (long ReadDataSize) =>
+					{
+						var SubData = AtomData.SubArray(Start, ReadDataSize);
+						Start += (int)ReadDataSize;
+						return SubData;
+					};
+					//var AvccAtom = PopX.Atom.GetNextAtom(ReadAvccData);
 					SampleDescription.AvccAtom = AvccAtom;
 					if ( AvccAtom.HasValue )
 						SampleDescription.AvccAtomData = AvccAtom.Value.AtomData;
 				}
-
+				*/
 				SampleDescriptions.Add(SampleDescription);
 			}
+
 			return SampleDescriptions;
 		}
 
@@ -1016,7 +1048,7 @@ namespace PopX
 			};
 
 			//	go through the track
-			PopX.Atom.DecodeAtomChildren(EnumTrakChild, Trak, ReadData);
+			PopX.Atom.DecodeAtomChildren(EnumTrakChild, Trak);
 
 			Track.SampleDescriptions = TrackSampleDescriptions;
 			Track.Samples = TrackSamples;
