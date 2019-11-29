@@ -158,10 +158,10 @@ namespace PopX
 			return Epoch;
 		}
 
-		static List<ChunkMeta> GetChunkMetas(TAtom Atom, byte[] FileData)
+		static List<ChunkMeta> GetChunkMetas(TAtom Atom, System.Func<long, byte[]> ReadData)
 		{
 			var Metas = new List<ChunkMeta>();
-			var AtomData = Atom.GetAtomData(FileData);
+			var AtomData = Atom.AtomData;
 
 			var Offset = 0;
 			//	https://developer.apple.com/library/content/documentation/QuickTime/QTFF/QTFFChap2/qtff2.html
@@ -181,7 +181,7 @@ namespace PopX
 			return Metas;
 		}
 
-		static List<long> GetChunkOffsets(TAtom? Offset32sAtom, TAtom? Offset64sAtom, byte[] FileData)
+		static List<long> GetChunkOffsets(TAtom? Offset32sAtom, TAtom? Offset64sAtom, System.Func<long, byte[]> ReadData)
 		{
 			//	chunk offsets are file-relative, not realtive to mdat or anything else. see
 			//	https://developer.apple.com/library/content/documentation/QuickTime/QTFF/QTFFChap2/qtff2.html
@@ -203,7 +203,7 @@ namespace PopX
 			}
 
 			var Offsets = new List<long>();
-			var AtomData = Atom.GetAtomData(FileData);
+			var AtomData = Atom.AtomData;
 
 			var Offset = 0;
 			var Version = Get8(AtomData, ref Offset);
@@ -231,7 +231,7 @@ namespace PopX
 			return Offsets;
 		}
 
-		static bool[] GetSampleKeyframes(TAtom? SyncSamplesAtom, byte[] FileData,int SampleCount)
+		static bool[] GetSampleKeyframes(TAtom? SyncSamplesAtom, System.Func<long, byte[]> ReadData, int SampleCount)
 		{
 			var Keyframes = new bool[SampleCount];
 			var Default = (SyncSamplesAtom == null) ? true : false;
@@ -244,7 +244,7 @@ namespace PopX
 
 			//	read table and set keyframed
 			var Atom = SyncSamplesAtom.Value;
-			var AtomData = Atom.GetAtomData(FileData);
+			var AtomData = Atom.AtomData;
 
 			var Offset = 0;
 			var Version = Get8( AtomData, ref Offset);
@@ -282,11 +282,11 @@ namespace PopX
 		}
 
 
-		static List<int> GetSampleDurations(TAtom Atom, byte[] FileData,int? ExpectedSampleCount)
+		static List<int> GetSampleDurations(TAtom Atom, System.Func<long, byte[]> ReadData, int? ExpectedSampleCount)
 		{
 			var Durations = new List<int>();
 
-			var AtomData = Atom.GetAtomData(FileData);
+			var AtomData = Atom.AtomData;
 
 			var Offset = 0;
 			var Version = Get8(AtomData, ref Offset);
@@ -317,7 +317,7 @@ namespace PopX
 			return Durations;
 		}
 
-		static List<int> GetSampleDurations(TAtom? Atom, byte[] FileData,int Default,int? ExpectedSampleCount)
+		static List<int> GetSampleDurations(TAtom? Atom, System.Func<long, byte[]> ReadData, int Default,int? ExpectedSampleCount)
 		{
 			if ( Atom == null )
 			{
@@ -331,13 +331,13 @@ namespace PopX
 				return Offsets;
 			}
 
-			return GetSampleDurations(Atom.Value, FileData, ExpectedSampleCount);
+			return GetSampleDurations(Atom.Value, ReadData, ExpectedSampleCount);
 		}
 
-		static List<long> GetSampleSizes(TAtom Atom, byte[] FileData)
+		static List<long> GetSampleSizes(TAtom Atom, System.Func<long, byte[]> ReadData)
 		{
 			var Sizes = new List<long>();
-			var AtomData = Atom.GetAtomData(FileData);
+			var AtomData = Atom.AtomData;
 
 			//	https://developer.apple.com/library/content/documentation/QuickTime/QTFF/QTFFChap2/qtff2.html
 			var Offset = 0;
@@ -382,9 +382,9 @@ namespace PopX
 		}
 
 
-		static TMediaHeader DecodeAtom_MediaHeader(TAtom Atom, byte[] FileData)
+		static TMediaHeader DecodeAtom_MediaHeader(TAtom Atom, System.Func<long, byte[]> ReadData)
 		{
-			var AtomData = Atom.GetAtomData(FileData);
+			var AtomData = Atom.AtomData;
 
 			var Offset = 0;
 			var Version = Get8(AtomData,ref Offset);
@@ -407,9 +407,9 @@ namespace PopX
 			return Header;
 		}
 
-		static TMovieHeader DecodeAtom_MovieHeader(TAtom Atom,byte[] FileData)
+		static TMovieHeader DecodeAtom_MovieHeader(TAtom Atom, System.Func<long, byte[]> ReadData)
 		{
-			var AtomData = Atom.GetAtomData(FileData);
+			var AtomData = Atom.AtomData;
 
 			//	https://developer.apple.com/library/content/documentation/QuickTime/QTFF/art/qt_l_095.gif
 			var Offset = 0;
@@ -503,17 +503,18 @@ namespace PopX
 
 		public static void Parse(string Filename, System.Action<TTrack> EnumTrack)
 		{
+			throw new System.Exception("Todo: make lambda for bit-by-bit reading");
 			var FileData = File.ReadAllBytes(Filename);
-			long BytesRead;
-			Parse(FileData, out BytesRead, EnumTrack);
+			long BytesRead = 0;
+
+			//Parse(FileData, out BytesRead, EnumTrack);
 		}
 
 		//	this interface lets you parse an mp4 asynchronously.
 		//	remember, all file position offsets in the atoms are relative to the data you input!
-		public static void ParseNextAtom(byte[] FileData, out long BytesRead, System.Action<List<TTrack>> EnumTracks,System.Action<TAtom> EnumMdat)
+		public static void ParseNextAtom(System.Func<long, byte[]> ReadData, System.Action<List<TTrack>> EnumTracks,System.Action<TAtom> EnumMdat)
 		{
-			long FilePos = 0;
-			var NextAtom = PopX.Atom.GetNextAtom(FileData, FilePos);
+			var NextAtom = PopX.Atom.GetNextAtom(ReadData);
 			if (!NextAtom.HasValue)
 				throw new System.Exception("Failed to get next atom");
 			var NewAtom = NextAtom.Value;
@@ -528,7 +529,7 @@ namespace PopX
 
 				//	decode moov (tracks, sample data etc)
 				var MoovAtom = NewAtom;
-				DecodeAtom_Moov(out Tracks, out Header, MoovAtom, FileData);
+				DecodeAtom_Moov(out Tracks, out Header, MoovAtom, ReadData);
 
 				EnumTracks(Tracks);
 			}
@@ -540,7 +541,7 @@ namespace PopX
 				var MdatIdent = 999;    //	currently just indexed
 
 				List<TTrack> MoofTracks;
-				DecodeAtom_Moof(out MoofTracks, out Header, MoofAtom, FileData, MdatIdent);
+				DecodeAtom_Moof(out MoofTracks, out Header, MoofAtom, ReadData, MdatIdent);
 
 				EnumTracks(MoofTracks);
 				/*
@@ -575,13 +576,9 @@ namespace PopX
 				//	enum it with appropriate track/sample meta
 				EnumMdat(NewAtom);
 			}
-
-			//	update if nothing failed
-			BytesRead = FilePos + NewAtom.AtomSize;
 		}
-
 		//	todo: replace with calls to ParseNextAtom() until data exhasted
-		public static void Parse(byte[] FileData, out long BytesRead,System.Action<TTrack> EnumTrack)
+		public static void Parse(System.Func<long, byte[]> ReadData, System.Action<TTrack> EnumTrack)
 		{
 			//	decode the header atoms
 			//TAtom? ftypAtom = null;
@@ -603,13 +600,9 @@ namespace PopX
 					Debug.Log("Ignored atom: " + Atom.Fourcc);
 			};
 
-			//	increment during parse?
-			BytesRead = 0;
-
 			//	read the root atoms
 			long FilePosition = 0;
-			PopX.Atom.Parse(FileData, ref FilePosition, EnumRootAtoms);
-			BytesRead = FilePosition;
+			PopX.Atom.Parse(ReadData, EnumRootAtoms);
 
 			//	dont even need mdat!
 			var Errors = new List<string>();
@@ -625,7 +618,7 @@ namespace PopX
 			if (moovAtom != null)
 			{
 				//	decode moov (tracks, sample data etc)
-				DecodeAtom_Moov(out Tracks, out Header, moovAtom.Value, FileData);
+				DecodeAtom_Moov(out Tracks, out Header, moovAtom.Value, ReadData);
 			}
 
 			for (var mai = 0; mai < MoofAtoms.Count;	mai++ )
@@ -633,7 +626,7 @@ namespace PopX
 				var MoofAtom = MoofAtoms[mai];
 				var MdatIdent = mai;	//	currently just indexed
 				List<TTrack> MoofTracks;
-				DecodeAtom_Moof(out MoofTracks, out Header, MoofAtom, FileData, MdatIdent);
+				DecodeAtom_Moof(out MoofTracks, out Header, MoofAtom, ReadData, MdatIdent);
 
 
 				//	todo: merge tracks properly. Make sure track indexes match!
@@ -651,7 +644,9 @@ namespace PopX
 						for (var mtsi = 0; mtsi < MoofTrack.Samples.Count; mtsi++)
 						{
 							var Sample = MoofTrack.Samples[mtsi];
-							Sample.DataPosition += Mdat.FileDataOffset;
+							throw new System.Exception("Todo, check data position");
+							//Sample.DataPosition += Mdat.FileDataOffset;
+							Sample.DataPosition += 0;
 							MoofTrack.Samples[mtsi] = Sample;
 						}
 					}
@@ -671,21 +666,14 @@ namespace PopX
 				EnumTrack(t);
 		}
 
-		public static void Parse(byte[] FileData, System.Action<TTrack> EnumTrack)
-		{
-			long BytesRead;
-			Parse(FileData, out BytesRead, EnumTrack);
-		}
-
-
-		static void DecodeAtom_Moov(out List<TTrack> Tracks,out TMovieHeader? MovieHeader,TAtom Moov, byte[] FileData)
+		static void DecodeAtom_Moov(out List<TTrack> Tracks,out TMovieHeader? MovieHeader,TAtom Moov,System.Func<long, byte[]> ReadData)
 		{
 			var NewTracks = new List<TTrack>();
 
 			//	get header first
-			var MovieHeaderAtom = Atom.GetChildAtom(Moov, "mvhd", FileData);
+			var MovieHeaderAtom = Atom.GetChildAtom(Moov, "mvhd", ReadData);
 			if (MovieHeaderAtom != null)
-				MovieHeader = DecodeAtom_MovieHeader(MovieHeaderAtom.Value, FileData);
+				MovieHeader = DecodeAtom_MovieHeader(MovieHeaderAtom.Value, ReadData);
 			else
 				MovieHeader = null;
 
@@ -696,18 +684,18 @@ namespace PopX
 				if (Atom.Fourcc == "trak")
 				{
 					var Track = new TTrack();
-					DecodeAtom_Track( ref Track, Atom, null, TimeScale, FileData );
+					DecodeAtom_Track( ref Track, Atom, null, TimeScale, ReadData);
 					NewTracks.Add(Track);
 				}
 			};
-			Atom.DecodeAtomChildren(EnumMoovChildAtom, Moov, FileData);
+			Atom.DecodeAtomChildren(EnumMoovChildAtom, Moov, ReadData);
 			Tracks = NewTracks;
 		}
 
 
 		//	microsoft seems to have the best reference
 		//	https://msdn.microsoft.com/en-us/library/ff469287.aspx
-		static void DecodeAtom_Moof(out List<TTrack> Tracks, out TMovieHeader? MovieHeader, TAtom Moov, byte[] FileData,int? MdatIdent)
+		static void DecodeAtom_Moof(out List<TTrack> Tracks, out TMovieHeader? MovieHeader, TAtom Moov, System.Func<long, byte[]> ReadData, int? MdatIdent)
 		{
 			var MoofTracks = new List<TTrack>();
 			MovieHeader = null;
@@ -727,18 +715,18 @@ namespace PopX
 				if (Atom.Fourcc == "traf")
 				{
 					var Track = new TTrack();
-					DecodeAtom_TrackFragment(ref Track, Atom, null, MdatIdent, TimeScale, FileData);
+					DecodeAtom_TrackFragment(ref Track, Atom, null, MdatIdent, TimeScale, ReadData);
 					MoofTracks.Add(Track);
 				}
 			};
-			Atom.DecodeAtomChildren(EnumMoovChildAtom, Moov, FileData);
+			Atom.DecodeAtomChildren(EnumMoovChildAtom, Moov, ReadData);
 			Tracks = MoofTracks;
 		}
 
 		//	trun
-		static List<TSample> DecodeAtom_FragmentSampleTable(TAtom Atom, float TimeScale, byte[] FileData,int? MDatIdent)
+		static List<TSample> DecodeAtom_FragmentSampleTable(TAtom Atom, float TimeScale, System.Func<long, byte[]> ReadData,int? MDatIdent)
 		{
-			var AtomData = Atom.GetAtomData(FileData);
+			var AtomData = Atom.AtomData;
 
 			//	this stsd description isn't well documented on the apple docs
 			//	http://xhelmboyx.tripod.com/formats/mp4-layout.txt
@@ -812,7 +800,7 @@ namespace PopX
 			return Samples;
 		}
 
-		static List<TSample> DecodeAtom_SampleTable(TAtom StblAtom, TAtom? MdatAtom,float TimeScale,byte[] FileData)
+		static List<TSample> DecodeAtom_SampleTable(TAtom StblAtom, TAtom? MdatAtom,float TimeScale, System.Func<long, byte[]> ReadData)
 		{
 			TAtom? ChunkOffsets32Atom = null;
 			TAtom? ChunkOffsets64Atom = null;
@@ -841,7 +829,7 @@ namespace PopX
 					SamplePresentationTimeOffsetsAtom = Atom;
 			};
 		
-			PopX.Atom.DecodeAtomChildren(EnumStblAtom, StblAtom, FileData);
+			PopX.Atom.DecodeAtomChildren(EnumStblAtom, StblAtom, ReadData);
 
 			//	work out samples from atoms!
 			if (SampleSizesAtom == null)
@@ -853,12 +841,12 @@ namespace PopX
 			if (SampleDecodeDurationsAtom == null)
 				throw new System.Exception("Track missing time-to-sample table atom");
 
-			var PackedChunkMetas = GetChunkMetas(SampleToChunkAtom.Value, FileData);
-			var ChunkOffsets = GetChunkOffsets(ChunkOffsets32Atom, ChunkOffsets64Atom, FileData);
-			var SampleSizes = GetSampleSizes(SampleSizesAtom.Value, FileData);
-			var SampleKeyframes = GetSampleKeyframes(SyncSamplesAtom, FileData, SampleSizes.Count);
-			var SampleDurations = GetSampleDurations(SampleDecodeDurationsAtom.Value, FileData, SampleSizes.Count);
-			var SamplePresentationTimeOffsets = GetSampleDurations(SamplePresentationTimeOffsetsAtom, FileData, 0, SampleSizes.Count);
+			var PackedChunkMetas = GetChunkMetas(SampleToChunkAtom.Value, ReadData);
+			var ChunkOffsets = GetChunkOffsets(ChunkOffsets32Atom, ChunkOffsets64Atom, ReadData);
+			var SampleSizes = GetSampleSizes(SampleSizesAtom.Value, ReadData);
+			var SampleKeyframes = GetSampleKeyframes(SyncSamplesAtom, ReadData, SampleSizes.Count);
+			var SampleDurations = GetSampleDurations(SampleDecodeDurationsAtom.Value, ReadData, SampleSizes.Count);
+			var SamplePresentationTimeOffsets = GetSampleDurations(SamplePresentationTimeOffsetsAtom, ReadData, 0, SampleSizes.Count);
 
 			//	durations start at zero (proper time must come from somewhere else!) and just count up over durations
 			var SampleDecodeTimes = new int[SampleSizes.Count];
@@ -965,9 +953,9 @@ namespace PopX
 			public byte[] AvccAtomData;
 		};
 
-		static List<TTrackSampleDescription> GetTrackSampleDescriptions(TAtom Atom, byte[] FileData)
+		static List<TTrackSampleDescription> GetTrackSampleDescriptions(TAtom Atom, System.Func<long, byte[]> ReadData)
 		{
-			var AtomData = Atom.GetAtomData(FileData);
+			var AtomData = Atom.AtomData;
 
 			//	this stsd description isn't well documented on the apple docs
 			//	http://xhelmboyx.tripod.com/formats/mp4-layout.txt
@@ -1004,10 +992,10 @@ namespace PopX
 					//	gr: these are the quicktime headers I think
 					var QuicktimeHeaderSize = 86;
 					var Start = Atom.FileOffset + QuicktimeHeaderSize + HeaderSize;
-					var AvccAtom = PopX.Atom.GetNextAtom(FileData, Start);
+					var AvccAtom = PopX.Atom.GetNextAtom(ReadData);
 					SampleDescription.AvccAtom = AvccAtom;
 					if ( AvccAtom.HasValue )
-						SampleDescription.AvccAtomData = AvccAtom.Value.GetAtomData(FileData);
+						SampleDescription.AvccAtomData = AvccAtom.Value.AtomData;
 				}
 
 				SampleDescriptions.Add(SampleDescription);
@@ -1016,7 +1004,7 @@ namespace PopX
 		}
 
 		//	traf
-		static void DecodeAtom_TrackFragment(ref TTrack Track, TAtom Trak, TAtom? MdatAtom,int? MdatIdent,float MovieTimeScale, byte[] FileData)
+		static void DecodeAtom_TrackFragment(ref TTrack Track, TAtom Trak, TAtom? MdatAtom,int? MdatIdent,float MovieTimeScale, System.Func<long, byte[]> ReadData)
 		{
 			List<TSample> TrackSamples = null;
 			List<TTrackSampleDescription> TrackSampleDescriptions = null;
@@ -1024,17 +1012,17 @@ namespace PopX
 			System.Action<TAtom> EnumTrakChild = (Atom) =>
 			{
 				if (Atom.Fourcc == "trun")
-					TrackSamples = DecodeAtom_FragmentSampleTable(Atom, MovieTimeScale, FileData, MdatIdent);
+					TrackSamples = DecodeAtom_FragmentSampleTable(Atom, MovieTimeScale, ReadData, MdatIdent);
 			};
 
 			//	go through the track
-			PopX.Atom.DecodeAtomChildren(EnumTrakChild, Trak, FileData);
+			PopX.Atom.DecodeAtomChildren(EnumTrakChild, Trak, ReadData);
 
 			Track.SampleDescriptions = TrackSampleDescriptions;
 			Track.Samples = TrackSamples;
 		}
 
-		static void DecodeAtom_Track(ref TTrack Track,TAtom Trak,TAtom? MdatAtom,float MovieTimeScale,byte[] FileData)
+		static void DecodeAtom_Track(ref TTrack Track,TAtom Trak,TAtom? MdatAtom,float MovieTimeScale, System.Func<long, byte[]> ReadData)
 		{
 			List<TSample> TrackSamples = null;
 			List<TTrackSampleDescription> TrackSampleDescriptions = null;
@@ -1046,30 +1034,30 @@ namespace PopX
 				if (Atom.Fourcc == "stbl")
 				{
 					var TrackTimeScale = MediaHeader.HasValue ? MediaHeader.Value.TimeScale : MovieTimeScale;
-					TrackSamples = DecodeAtom_SampleTable(Atom, MdatAtom, TrackTimeScale, FileData);
+					TrackSamples = DecodeAtom_SampleTable(Atom, MdatAtom, TrackTimeScale, ReadData);
 
-					var SampleDescriptionAtom = PopX.Atom.GetChildAtom(Atom, "stsd", FileData);
+					var SampleDescriptionAtom = PopX.Atom.GetChildAtom(Atom, "stsd", ReadData);
 					if (SampleDescriptionAtom != null)
-						TrackSampleDescriptions = GetTrackSampleDescriptions(SampleDescriptionAtom.Value,FileData);
+						TrackSampleDescriptions = GetTrackSampleDescriptions(SampleDescriptionAtom.Value, ReadData);
 				}
 			};
 			System.Action<TAtom> EnumMdiaAtom = (Atom) =>
 			{
 				if (Atom.Fourcc == "mdhd")
-					MediaHeader = DecodeAtom_MediaHeader(Atom, FileData);
+					MediaHeader = DecodeAtom_MediaHeader(Atom, ReadData);
 
 				if (Atom.Fourcc == "minf")
-					PopX.Atom.DecodeAtomChildren(EnumMinfAtom, Atom, FileData);
+					PopX.Atom.DecodeAtomChildren(EnumMinfAtom, Atom, ReadData);
 			};
 			System.Action<TAtom> EnumTrakChild = (Atom) =>
 			{
 				//EnumAtom(Atom);
 				if (Atom.Fourcc == "mdia")
-					PopX.Atom.DecodeAtomChildren(EnumMdiaAtom, Atom, FileData);
+					PopX.Atom.DecodeAtomChildren(EnumMdiaAtom, Atom, ReadData);
 			};
 
 			//	go through the track
-			PopX.Atom.DecodeAtomChildren(EnumTrakChild, Trak, FileData);
+			PopX.Atom.DecodeAtomChildren(EnumTrakChild, Trak, ReadData);
 
 			Track.SampleDescriptions = TrackSampleDescriptions;
 			Track.Samples = TrackSamples;

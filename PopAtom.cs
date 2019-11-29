@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -30,10 +30,13 @@ namespace PopX
 		public long AtomSize;			//	total size of atom including headers
 		public long HeaderExtraSize;	//	MinHeaderSize + length
 		public long DataSize			{ get { return AtomSize - HeaderSize - HeaderExtraSize; }}
+		public byte[] AtomData;			//	
+		/*
 		public long FileDataOffset		//	start of data
 		{
 			get { return FileOffset + HeaderSize + HeaderExtraSize; }
 		}
+		*/
 
 		public void Init(byte[] Data8,System.Func<byte[]> GetNext8=null)
 		{
@@ -72,11 +75,6 @@ namespace PopX
 				throw new System.Exception("Atom with invalid data size of " + DataSize + " (cannot be <8 bytes)");
 		}
 
-		//	get data after header
-		public byte[] GetAtomData(byte[] FileData)
-		{
-			return FileData.SubArray(FileDataOffset, DataSize );
-		}
 	}
 
 
@@ -146,12 +144,12 @@ namespace PopX
 
 
 
-		static void DecodeAtomRecursive(System.Action<TAtom> EnumAtom, TAtom Moov, byte[] FileData)
+		static void DecodeAtomRecursive(System.Action<TAtom> EnumAtom, TAtom Moov, System.Func<long, byte[]> ReadData)
 		{
 			var AtomStart = Moov.FileOffset + TAtom.HeaderSize;
 			while (true)
 			{
-				var NextAtom = GetNextAtom(FileData, (int)AtomStart);
+				var NextAtom = GetNextAtom(ReadData);
 				if (NextAtom == null)
 					break;
 
@@ -161,13 +159,13 @@ namespace PopX
 				//	It also contains sub-atoms "stco" and "co64" which are absolute pointers to keyframes in the mdata atom.
 				EnumAtom(Atom);
 
-				DecodeAtomRecursive(EnumAtom, Atom, FileData);
+				DecodeAtomRecursive(EnumAtom, Atom, ReadData);
 
 				AtomStart = Atom.FileOffset + Atom.AtomSize;
 			}
 		}
 
-		static public TAtom? GetChildAtom(TAtom ParentAtom, string Fourcc,byte[] FileData)
+		static public TAtom? GetChildAtom(TAtom ParentAtom, string Fourcc, System.Func<long, byte[]> ReadData)
 		{
 			TAtom? MatchAtom = null;
 			System.Action<TAtom> FindChild = (ChildAtom) =>
@@ -176,17 +174,18 @@ namespace PopX
 					MatchAtom = ChildAtom;
 			};
 		
-			DecodeAtomChildren(FindChild, ParentAtom, FileData);
+			DecodeAtomChildren(FindChild, ParentAtom, ReadData);
 			return MatchAtom;
 		}
 
-		static public void DecodeAtomChildren(System.Action<TAtom> EnumAtom, TAtom Moov, byte[] FileData)
+		static public void DecodeAtomChildren(System.Action<TAtom> EnumAtom, TAtom Moov, System.Func<long, byte[]> ReadData)
 		{
 			//	decode moov children (mvhd, trak, udta)
 			var MoovEnd = Moov.FileOffset + Moov.AtomSize;
-			for (var AtomStart = Moov.FileOffset + TAtom.HeaderSize; AtomStart < MoovEnd; AtomStart += 0)
+			while(true)
+			//for (var AtomStart = Moov.FileOffset + TAtom.HeaderSize; AtomStart < MoovEnd; AtomStart += 0)
 			{
-				var NextAtom = GetNextAtom(FileData, AtomStart);
+				var NextAtom = GetNextAtom(ReadData);
 				if (NextAtom == null)
 					break;
 				var Atom = NextAtom.Value;
@@ -199,7 +198,7 @@ namespace PopX
 				{
 					Debug.LogException(e);
 				}
-				AtomStart = Atom.FileOffset + Atom.AtomSize;
+				//AtomStart = Atom.FileOffset + Atom.AtomSize;
 			}
 		}
 
@@ -221,7 +220,7 @@ namespace PopX
 		static List<SampleMeta> GetSampleMetas(TAtom Atom, byte[] FileData)
 		{
 			var Metas = new List<SampleMeta>();
-			var AtomData = Atom.GetAtomData(FileData);
+			var AtomData = Atom.AtomData;
 
 			//	https://developer.apple.com/library/content/documentation/QuickTime/QTFF/QTFFChap2/qtff2.html
 			//var Version = AtomData[8];
@@ -260,7 +259,7 @@ namespace PopX
 			}
 
 			var Offsets = new List<long>();
-			var AtomData = Atom.GetAtomData(FileData);
+			var AtomData = Atom.AtomData;
 
 			//var Version = AtomData[8];
 			/*var Flags = */Get24(AtomData[9], AtomData[10], AtomData[11]);
@@ -330,21 +329,13 @@ namespace PopX
 		}
 
 
-		public static TAtom? GetNextAtom(byte[] Data, long Start)
+		public static TAtom? GetNextAtom(System.Func<long, byte[]> ReadData)
 		{
-			//	no more data!
-			//	gr: parent should figure out when we've reached the end, not pre-bail
-			if (Start >= Data.Length)
-				return null;
-			
-			var AtomData = new byte[TAtom.HeaderSize];
-			Array.Copy( Data, Start, AtomData, 0, AtomData.Length);
+			var AtomData = ReadData(TAtom.HeaderSize);
 
 			System.Func<byte[]> GetNext8 = () =>
 			{
-				var AtomExtData = new byte[8];
-				var ExtStart = Start + AtomData.Length;
-				Array.Copy(Data, ExtStart, AtomExtData, 0, AtomExtData.Length);
+				var AtomExtData = ReadData(8);
 				return AtomExtData;
 			};
 
@@ -353,6 +344,9 @@ namespace PopX
 			Atom.Init(AtomData, GetNext8);
 
 			//	todo: can we verify the fourcc? lets check the spec if the characters have to be ascii or something
+			//	grab the atom's data
+			Atom.AtomData = ReadData(Atom.DataSize);
+			/*
 			//	verify size
 			var EndPos = Start + Atom.AtomSize;
 			if (EndPos > Data.Length)
@@ -363,26 +357,26 @@ namespace PopX
 			}
 
 			Atom.FileOffset = (uint)Start;
+			*/
 			return Atom;
 		}
 
 		public static void Parse(string Filename, System.Action<TAtom> EnumAtom)
 		{
 			var FileData = File.ReadAllBytes(Filename);
-			long FilePosition = 0;
-			Parse(FileData, ref FilePosition, EnumAtom);
+			throw new System.Exception("Todo; parse file with lambda");
+			//long FilePosition = 0;
+			//Parse(FileData, ref FilePosition, EnumAtom);
 		}
 
-		public static void Parse(byte[] FileData, ref long FilePosition,System.Action<TAtom> EnumAtom)
+		public static void Parse(System.Func<long, byte[]> ReadData, System.Action<TAtom> EnumAtom)
 		{
-			var Length = FileData.Length;
-
 			//	gr: need to handle ot of data
 			//	read first atom
 			//while (FilePosition < FileData.Length)
 			while(true)
 			{
-				var NextAtom = GetNextAtom(FileData, FilePosition);
+				var NextAtom = GetNextAtom(ReadData);
 				if (NextAtom == null)
 					break;
 
@@ -398,12 +392,13 @@ namespace PopX
 
 				if (Atom.AtomSize == 1)
 					throw new System.Exception("Extended Atom size found, not yet handled");
-
+				/*
 				//i = (int)(Atom.Offset + Atom.Length + 1);
 				var NextPosition = Atom.FileOffset + Atom.AtomSize;
 				if (FilePosition >= NextPosition)
 					throw new System.Exception("Infinite loop averted");
 				FilePosition = NextPosition;
+				*/
 			}
 		}
 
