@@ -176,7 +176,7 @@ namespace PopX
 				if (!NextAtom.HasValue)
 					break;
 				var Atom = NextAtom.Value;
-				Debug.Log("Found " + Atom.Fourcc);
+				//Debug.Log("Found " + Atom.Fourcc);
 				EnumAtom(Atom);
 				FilePos += NextAtom.Value.AtomSize;
 			}

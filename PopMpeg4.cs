@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -691,7 +691,7 @@ namespace PopX
 
 				var Sample = new TSample();
 				Sample.MDatIdent = MDatIdent.HasValue ? MDatIdent.Value : -1;
-				Sample.DataFilePosition = CurrentDataStartPosition;
+				Sample.DataPosition = CurrentDataStartPosition;
 				Sample.DataSize = SampleSize;
 				Sample.DurationMs = TimeToMs(SampleDuration);
 				Sample.IsKeyframe = false;
@@ -782,6 +782,9 @@ namespace PopX
 			while (ChunkMetas.Count < ChunkOffsets.Count)
 				ChunkMetas.Add(ChunkMetas[ChunkMetas.Count - 1]);
 
+			//	we're now expecting this to be here
+			var MdatStartPosition = MdatAtom.HasValue ? MdatAtom.Value.AtomDataFilePosition : (long?)null;
+
 			//	superfolous data
 			var Chunks = new List<TSample>();
 			long? MdatEnd = (MdatAtom.HasValue) ? (MdatAtom.Value.DataSize) : (long?)null;
@@ -794,7 +797,7 @@ namespace PopX
 				long ChunkLength = (NextChunkOffset.HasValue) ? (NextChunkOffset.Value - ThisChunkOffset) : 0;
 
 				var Chunk = new TSample();
-				Chunk.DataFilePosition = ThisChunkOffset;
+				Chunk.DataPosition = ThisChunkOffset;
 				Chunk.DataSize = ChunkLength;
 				Chunks.Add(Chunk);
 			}
@@ -814,12 +817,17 @@ namespace PopX
 			{
 				var SampleMeta = ChunkMetas[i];
 				var ChunkIndex = i;
-				var ChunkOffset = ChunkOffsets[ChunkIndex];
+				var ChunkFileOffset = ChunkOffsets[ChunkIndex];
 
 				for (int s = 0; s < SampleMeta.SamplesPerChunk; s++)
 				{
 					var Sample = new TSample();
-					Sample.DataFilePosition = ChunkOffset;
+
+					if (MdatStartPosition.HasValue)
+						Sample.DataPosition = ChunkFileOffset - MdatStartPosition.Value;
+					else
+						Sample.DataFilePosition = ChunkFileOffset;
+
 					Sample.DataSize = SampleSizes[SampleIndex];
 					Sample.IsKeyframe = SampleKeyframes[SampleIndex];
 					Sample.DecodeTimeMs = TimeToMs( SampleDecodeTimes[SampleIndex] );
@@ -827,7 +835,7 @@ namespace PopX
 					Sample.PresentationTimeMs = TimeToMs( SampleDecodeTimes[SampleIndex] + SamplePresentationTimeOffsets[SampleIndex] );
 					Samples.Add(Sample);
 
-					ChunkOffset += Sample.DataSize;
+					ChunkFileOffset += Sample.DataSize;
 					SampleIndex++;
 				}
 			}
