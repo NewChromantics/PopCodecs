@@ -344,19 +344,11 @@ namespace PopX
 
 			//	todo: can we verify the fourcc? lets check the spec if the characters have to be ascii or something
 			//	grab the atom's data
-			Atom.AtomData = ReadData(Atom.DataSize);
-			/*
-			//	verify size
-			var EndPos = Start + Atom.AtomSize;
-			if (EndPos > Data.Length)
+			if (Atom.DataSize > 0)
 			{
-				//	if streaming/fragmented mp4, dont abort after mdat
-				if ( Atom.Fourcc != "mdat")
-					throw new System.Exception("Atom " + Atom.Fourcc + " end position " + (EndPos) + " out of range of data " + Data.Length);
+				Atom.AtomData = ReadData(Atom.DataSize);
 			}
 
-			Atom.FileOffset = (uint)Start;
-			*/
 			return Atom;
 		}
 
