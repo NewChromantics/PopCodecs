@@ -24,11 +24,12 @@ namespace PopX
 	//	use of long = file position
 	public struct TAtom
 	{
-		public const long HeaderSize = 8;
+		public const long AtomHeaderSize = 8;
 		public string Fourcc;
-		public long AtomSize;			//	total size of atom including headers
-		public long HeaderExtraSize;	//	MinHeaderSize + length
-		public long DataSize			{ get { return AtomSize - HeaderSize - HeaderExtraSize; }}
+		public long AtomSize;           //	total size of atom including headers
+		public long HeaderSize			{ get { return AtomHeaderSize + HeaderExtraSize; }}
+		public long HeaderExtraSize;    //	MinHeaderSize + length
+		public long DataSize			{ get { return AtomSize - HeaderSize; }}
 		public byte[] AtomData;			//	
 		/*
 		public long FileDataOffset		//	start of data
@@ -67,8 +68,8 @@ namespace PopX
 				}
 			}
 
-			if (AtomSize < HeaderSize + HeaderExtraSize)
-				throw new System.Exception("Atom size(" + AtomSize + ") invalid, less than header size (" + HeaderSize + "+" + HeaderExtraSize + ")");
+			if (AtomSize < AtomHeaderSize + HeaderExtraSize)
+				throw new System.Exception("Atom size(" + AtomSize + ") invalid, less than header size (" + AtomHeaderSize + "+" + HeaderExtraSize + ")");
 
 			if (AtomSize < 8)
 				throw new System.Exception("Atom with invalid data size of " + DataSize + " (cannot be <8 bytes)");
@@ -334,7 +335,7 @@ namespace PopX
 			byte[] AtomData = null;
 			try
 			{
-				AtomData = ReadData(TAtom.HeaderSize);
+				AtomData = ReadData(TAtom.AtomHeaderSize);
 				//	EOF
 				if (AtomData == null)
 					return null;
