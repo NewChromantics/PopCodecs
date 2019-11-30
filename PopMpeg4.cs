@@ -503,7 +503,7 @@ namespace PopX
 
 		public static void Parse(string Filename, System.Action<TTrack> EnumTrack)
 		{
-			throw new System.Exception("Todo: make lambda for bit-by-bit reading");
+			throw new System.Exception("Todo: make lambda for chunk-by-chunk reading");
 			var FileData = File.ReadAllBytes(Filename);
 			long BytesRead = 0;
 
@@ -511,14 +511,16 @@ namespace PopX
 		}
 
 		//	this interface lets you parse an mp4 asynchronously.
-		//	remember, all file position offsets in the atoms are relative to the data you input!
-		public static void ParseNextAtom(System.Func<long, byte[]> ReadData, System.Action<List<TTrack>> EnumTracks,System.Action<TAtom> EnumMdat)
+		//	whilst ReadData lets you stream in data, we still need FileOffset because 
+		//	chunk/sample positions in the mp4 in non-streaming mp4's are relative to
+		//	the file position, not the mdat.
+		public static void ParseNextAtom(System.Func<long, byte[]> ReadData,long FilePosition, System.Action<List<TTrack>> EnumTracks,System.Action<TAtom> EnumMdat)
 		{
-			var NextAtom = PopX.Atom.GetNextAtom(ReadData);
+			var NextAtom = PopX.Atom.GetNextAtom(ReadData, FilePosition);
+			//	if we get no atom and no exception is thrown, we're out of data. But the caller should know that.
 			if (!NextAtom.HasValue)
-				throw new System.Exception("Failed to get next atom");
+				throw new System.Exception("Failed to get next atoms");
 			var NewAtom = NextAtom.Value;
-
 
 
 			//	handle the atom
@@ -544,21 +546,12 @@ namespace PopX
 				DecodeAtom_Moof(out MoofTracks, out Header, MoofAtom, ReadData, MdatIdent);
 
 				EnumTracks(MoofTracks);
+
+				throw new System.Exception("Check over moof tracks");
 				/*
-				//	temporarily correct sample offsets
 				//	todo: change accessor/give accessor
 				var Mdat = MdatAtoms[MdatIdent];
-				if (MoofTrack.Samples != null)
-				{
-					for (var mtsi = 0; mtsi < MoofTrack.Samples.Count; mtsi++)
-					{
-						var Sample = MoofTrack.Samples[mtsi];
-						Sample.DataPosition += Mdat.FileDataOffset;
-						MoofTrack.Samples[mtsi] = Sample;
-					}
-				}
-				*/
-				/*
+
 				while (Tracks.Count < mfi)
 				{
 					Tracks.Add(new TTrack());
