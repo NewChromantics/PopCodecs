@@ -91,9 +91,9 @@ namespace PopX
 		*/
 		public struct TSample
 		{
-			//	todo: store MDat position instead of absolute?
-			public int MDatIdent;		//	if -1 then position is absolute
-			public long DataPosition;
+			public int? MDatIdent;			//	do we know which mdat we're in
+			public long? DataFilePosition;  //	chunk offsets are in file-position. Need to make it mdat-relative
+			public long? DataPosition; 		//	mdat relative position
 			public long DataSize;
 			public bool IsKeyframe;	
 			public int DecodeTimeMs;
@@ -577,94 +577,6 @@ namespace PopX
 				EnumMdat(NewAtom);
 			}
 		}
-		//	todo: replace with calls to ParseNextAtom() until data exhasted
-		public static void Parse(System.Func<long, byte[]> ReadData, System.Action<TTrack> EnumTrack)
-		{
-			//	decode the header atoms
-			//TAtom? ftypAtom = null;
-
-			//	only ever one? streaming video from hololens had 1 and then multiple moofs and mdats
-			//	others (eg. azure stream) has no moov but 1 moof
-			TAtom? moovAtom = null;
-			var MoofAtoms = new List<TAtom>();
-			var MdatAtoms = new List<TAtom>();
-			//TAtom? mdatAtom = null;
-
-			System.Action<TAtom> EnumRootAtoms = (Atom) =>
-			{
-				if (Atom.Fourcc == "moov") moovAtom = Atom;
-				else if (Atom.Fourcc == "moof") MoofAtoms.Add(Atom);
-				else if (Atom.Fourcc == "mdat") MdatAtoms.Add(Atom);
-				//else if (Atom.Fourcc == "ftyp") ftypAtom = Atom;
-				else
-					Debug.Log("Ignored atom: " + Atom.Fourcc);
-			};
-
-			//	read the root atoms
-			long FilePosition = 0;
-			PopX.Atom.Parse(ReadData, EnumRootAtoms);
-
-			//	dont even need mdat!
-			var Errors = new List<string>();
-
-			//if (ftypAtom == null)
-			//	Errors.Add("Missing ftyp atom");
-			if (Errors.Count > 0)
-				throw new System.Exception(String.Join(", ",Errors.ToArray()));
-
-
-			List<TTrack> Tracks = null;
-			TMovieHeader? Header;
-			if (moovAtom != null)
-			{
-				//	decode moov (tracks, sample data etc)
-				DecodeAtom_Moov(out Tracks, out Header, moovAtom.Value, ReadData);
-			}
-
-			for (var mai = 0; mai < MoofAtoms.Count;	mai++ )
-			{
-				var MoofAtom = MoofAtoms[mai];
-				var MdatIdent = mai;	//	currently just indexed
-				List<TTrack> MoofTracks;
-				DecodeAtom_Moof(out MoofTracks, out Header, MoofAtom, ReadData, MdatIdent);
-
-
-				//	todo: merge tracks properly. Make sure track indexes match!
-				for (int mfi = 0; mfi < MoofTracks.Count;	mfi++)
-				{
-					var MoofTrack = MoofTracks[mfi];
-					if (Tracks == null)
-						Tracks = new List<TTrack>();
-
-					//	temporarily correct sample offsets
-					//	todo: change accessor/give accessor
-					var Mdat = MdatAtoms[MdatIdent];
-					if (MoofTrack.Samples != null)
-					{
-						for (var mtsi = 0; mtsi < MoofTrack.Samples.Count; mtsi++)
-						{
-							var Sample = MoofTrack.Samples[mtsi];
-							throw new System.Exception("Todo, check data position");
-							//Sample.DataPosition += Mdat.FileDataOffset;
-							Sample.DataPosition += 0;
-							MoofTrack.Samples[mtsi] = Sample;
-						}
-					}
-
-					while ( Tracks.Count < mfi )
-					{
-						Tracks.Add(new TTrack());
-					}
-					if (MoofTrack.SampleDescriptions!=null)
-						Tracks[mfi].SampleDescriptions.AddRange(MoofTrack.SampleDescriptions);
-					if (MoofTrack.Samples != null)
-						Tracks[mfi].Samples.AddRange(MoofTrack.Samples);
-				}
-			}
-
-			foreach (var t in Tracks)
-				EnumTrack(t);
-		}
 
 		static void DecodeAtom_Moov(out List<TTrack> Tracks,out TMovieHeader? MovieHeader,TAtom Moov,System.Func<long, byte[]> ReadData)
 		{
@@ -767,6 +679,7 @@ namespace PopX
 
 			var Samples = new List<TSample>();
 			var CurrentDataStartPosition = DataOffset;
+			throw new System.Exception("Check over this, is dataoffset the file-offset... can we omit it and so we KNOW the offset in mdat-relative?");
 			var CurrentTime = 0;
 			for (int sd = 0; sd < EntryCount; sd++)
 			{
@@ -785,7 +698,7 @@ namespace PopX
 
 				var Sample = new TSample();
 				Sample.MDatIdent = MDatIdent.HasValue ? MDatIdent.Value : -1;
-				Sample.DataPosition = CurrentDataStartPosition;
+				Sample.DataFilePosition = CurrentDataStartPosition;
 				Sample.DataSize = SampleSize;
 				Sample.DurationMs = TimeToMs(SampleDuration);
 				Sample.IsKeyframe = false;
@@ -888,7 +801,7 @@ namespace PopX
 				long ChunkLength = (NextChunkOffset.HasValue) ? (NextChunkOffset.Value - ThisChunkOffset) : 0;
 
 				var Chunk = new TSample();
-				Chunk.DataPosition = ThisChunkOffset;
+				Chunk.DataFilePosition = ThisChunkOffset;
 				Chunk.DataSize = ChunkLength;
 				Chunks.Add(Chunk);
 			}
@@ -913,7 +826,7 @@ namespace PopX
 				for (int s = 0; s < SampleMeta.SamplesPerChunk; s++)
 				{
 					var Sample = new TSample();
-					Sample.DataPosition = ChunkOffset;
+					Sample.DataFilePosition = ChunkOffset;
 					Sample.DataSize = SampleSizes[SampleIndex];
 					Sample.IsKeyframe = SampleKeyframes[SampleIndex];
 					Sample.DecodeTimeMs = TimeToMs( SampleDecodeTimes[SampleIndex] );
