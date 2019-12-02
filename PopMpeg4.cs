@@ -859,12 +859,9 @@ namespace PopX
 
 		public struct TTrackSampleDescription
 		{
-			public string Fourcc;   //	gr: this is 4 bytes, but might not actually be a fourcc?
-			public int DataReferenceIndex;
-			//public byte[] Data;     //	codec specific data
-
-			//public TAtom? AvccAtom;
-			public byte[] AvccAtomData;
+			public string	Fourcc;   //	gr: this is 4 bytes, but might not actually be a fourcc?
+			//public int		DataReferenceIndex;	//	stopped reading this, revisit the content of stsd which comes before the avcC atom
+			public byte[]	AvccAtomData;     //	codec data taken out of the avcC(inside avc1) atom
 		};
 
 		static List<TTrackSampleDescription> GetTrackSampleDescriptions(TAtom Atom, System.Func<long, byte[]> ReadData)
