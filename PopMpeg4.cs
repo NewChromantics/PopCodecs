@@ -863,7 +863,7 @@ namespace PopX
 			public int DataReferenceIndex;
 			//public byte[] Data;     //	codec specific data
 
-			public TAtom? AvccAtom;
+			//public TAtom? AvccAtom;
 			public byte[] AvccAtomData;
 		};
 
@@ -881,33 +881,39 @@ namespace PopX
 
 			var SampleDescriptions = new List<TTrackSampleDescription>();
 
-
-			var TempAtom = new TAtom();
-			TempAtom.AtomData = AtomData.SubArray(Offset, AtomData.Length - Offset);
-
-			TAtom? AvccAtom = null;
-
-			Action<TAtom> EnumSubCodecs = (TAtom Child) =>
+			System.Func<long,byte[]> ReadAtomDataData = (long Size)=>
 			{
-				Debug.Log("EnumSubCodecs "+Child.Fourcc);
-				if (Child.Fourcc == "avcC")
-					AvccAtom = Child;
+				var Data = AtomData.SubArray(Offset, Size);
+				Offset += (int)Size;
+				return Data;
 			};
-
-			Action<TAtom> EnumCodecs = (TAtom Child) =>
-			{
-				Debug.Log("EnumCodecs " + Child.Fourcc);
-				if (Child.Fourcc == "avc1")
-					AvccAtom = Child;
-				//PopX.Atom.DecodeAtomChildren(EnumSubCodecs, Child);
-			};
-			PopX.Atom.DecodeAtomChildren(EnumCodecs, TempAtom);
 
 			for (int sd = 0; sd < EntryCount;	sd++ )
 			{
+				//	https://stackoverflow.com/a/14549784/355753
+				//	each sample is an atom/box
+				var SampleDescriptionAtom = PopX.Atom.GetNextAtom(ReadAtomDataData, 0).Value;
+				var SampleDescription = new TTrackSampleDescription();
+				SampleDescription.Fourcc = SampleDescriptionAtom.Fourcc;
+				if (SampleDescription.Fourcc == "avc1")
+				{
+					//	gr: these are the quicktime headers I think
+					//		looking at atomic parsely, I think this data is expected, we're just jumping over it to the AVCC atom
+					//		so 80-4 is probably the avcC fourcc and a length before that
+					var QuicktimeHeaderSize = 78;
+					var Start = 0 + QuicktimeHeaderSize + SampleDescriptionAtom.HeaderSize;
+					//var Start = Atom.FileOffset + QuicktimeHeaderSize + HeaderSize;
+					SampleDescription.AvccAtomData = SampleDescriptionAtom.AtomData.SubArray(Start, SampleDescriptionAtom.AtomData.Length - Start);
+					//SampleDescription.AvccAtom = SampleDescriptionAtom;
+				}
+				/*
+				var Data = AtomData.SubArray(Offset, DataSize);
+
+				TAtom x;
+				x.Init()
 				var OffsetStart = Offset;
 				var Size = Get32(AtomData, ref Offset);
-				var Format = Get8x4(AtomData, ref Offset);
+				var Fourcc = Get8x4(AtomData, ref Offset);
 				var Reserved = GetN(AtomData, 6, ref Offset);
 				var DataReferenceIndex = Get16(AtomData, ref Offset);
 
@@ -921,7 +927,7 @@ namespace PopX
 				SampleDescription.DataReferenceIndex = DataReferenceIndex;
 				//SampleDescription.Data = Data;
 				if (AvccAtom.HasValue)
-					SampleDescription.AvccAtomData = AvccAtom.Value.AtomData.SubArray(86, 47);
+					SampleDescription.AvccAtomData = AvccAtom.Value.AtomData;
 				SampleDescription.Fourcc = Encoding.ASCII.GetString(Format);
 				/*
 				//	gr: temp solution, rip off the header to get the encoder's header atom
