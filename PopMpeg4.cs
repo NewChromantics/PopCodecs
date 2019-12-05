@@ -627,6 +627,28 @@ namespace PopX
 			Tracks = MoofTracks;
 		}
 
+		//	mp4 parser and ms docs contradict themselves
+		enum TrunFlags  //	mp4 parser
+		{
+			DataOffsetPresent = 0,
+			FirstSampleFlagsPresent = 2,
+			SampleDurationPresent = 8,
+			SampleSizePresent = 9,
+			SampleFlagsPresent = 10,
+			SampleCompositionTimeOffsetPresent = 11
+		}
+		/*
+		enum TrunFlags  //	ms (matching hololens stream)
+		{
+			DataOffsetPresent = 0,
+			FirstSampleFlagsPresent = 3,
+			SampleDurationPresent = 9,
+			SampleSizePresent = 10,
+			SampleFlagsPresent = 11,
+			SampleCompositionTimeOffsetPresent = 12
+		};
+		*/
+
 		//	trun
 		static List<TSample> DecodeAtom_FragmentSampleTable(TAtom Atom, float TimeScale, System.Func<long, byte[]> ReadData,int? MDatIdent)
 		{
@@ -637,21 +659,31 @@ namespace PopX
 			//	https://stackoverflow.com/a/14549784/355753
 			//var Version = AtomData[8];
 			var Offset = 0;
-			var Flags = Get32(AtomData, ref Offset);
+			var Version = Get8(AtomData, ref Offset);
+			var Flags = Get24(AtomData, ref Offset);
 			var EntryCount = Get32(AtomData, ref Offset);
+
+
+			//	gr; with a fragmented mp4 the headers were incorrect (bad sample sizes, mismatch from mp4parser's output)
+			//	ffmpeg -i cat_baseline.mp4 -c copy -movflags frag_keyframe+empty_moov cat_baseline_fragment.mp4
+			//	http://178.62.222.88/mp4parser/mp4.js
+			//	so trying this version
+			//	VERSION8
+			//	FLAGS24
+			//	SAMPLECOUNT32
 
 			//	https://msdn.microsoft.com/en-us/library/ff469478.aspx
 			//	the docs on which flags are which are very confusing (they list either 25 bits or 114 or I don't know what)
 			//	0x0800 is composition|size|duration
 			//	from a stackoverflow post, 0x0300 is size|duration
 			//	0x0001 is offset from http://mp4parser.com/
-			System.Func<int, bool> IsFlagBit = (Bit) => { return (Flags & (1 << Bit)) != 0; };
-			var SampleSizePresent = IsFlagBit(8);
-			var SampleDurationPresent = IsFlagBit(9);
-			var SampleFlagsPresent = IsFlagBit(10);
-			var SampleCompositionTimeOffsetPresent = IsFlagBit(11);
-			var FirstSampleFlagsPresent = IsFlagBit(3);
-			var DataOffsetPresent = IsFlagBit(0);
+			System.Func<TrunFlags, bool> IsFlagBit = (Bit) => { return (Flags & (1 << (int)Bit)) != 0; };
+			var SampleSizePresent = IsFlagBit(TrunFlags.SampleSizePresent);
+			var SampleDurationPresent = IsFlagBit(TrunFlags.SampleDurationPresent);
+			var SampleFlagsPresent = IsFlagBit(TrunFlags.SampleFlagsPresent);
+			var SampleCompositionTimeOffsetPresent = IsFlagBit(TrunFlags.SampleCompositionTimeOffsetPresent);
+			var FirstSampleFlagsPresent = IsFlagBit(TrunFlags.FirstSampleFlagsPresent);
+			var DataOffsetPresent = IsFlagBit(TrunFlags.DataOffsetPresent);
 
 			//	This field MUST be set.It specifies the offset from the beginning of the MoofBox field(section 2.2.4.1).
 			//	gr:... to what?
@@ -672,11 +704,14 @@ namespace PopX
 			var Samples = new List<TSample>();
 			var CurrentDataStartPosition = DataOffset;
 			var CurrentTime = 0;
+			var FirstSampleFlags = 0;
+			if (FirstSampleFlagsPresent )
+			{
+				FirstSampleFlags = Get32(AtomData, ref Offset);
+			}
+
 			for (int sd = 0; sd < EntryCount; sd++)
 			{
-				if (FirstSampleFlagsPresent)
-					throw new System.Exception("Unhandled case: FirstSampleFlagsPresent");
-
 				var SampleDuration = SampleDurationPresent ? Get32(AtomData, ref Offset) : 0;
 				var SampleSize = SampleSizePresent ? Get32(AtomData, ref Offset) : 0;
 				var TrunBoxSampleFlags = SampleFlagsPresent ? Get32(AtomData, ref Offset) : 0;
