@@ -546,8 +546,6 @@ namespace PopX
 				DecodeAtom_Moof(out MoofTracks, out Header, MoofAtom, ReadData, MdatIdent);
 
 				EnumTracks(MoofTracks);
-
-				throw new System.Exception("Check over moof tracks");
 				/*
 				//	todo: change accessor/give accessor
 				var Mdat = MdatAtoms[MdatIdent];
@@ -617,6 +615,7 @@ namespace PopX
 			var TimeScale = 1.0f / 10000000.0f;
 			System.Action<TAtom> EnumMoovChildAtom = (Atom) =>
 			{
+				//	if ( Atom.Fourcc == "mfhd"
 				if (Atom.Fourcc == "traf")
 				{
 					var Track = new TTrack();
@@ -672,7 +671,6 @@ namespace PopX
 
 			var Samples = new List<TSample>();
 			var CurrentDataStartPosition = DataOffset;
-			throw new System.Exception("Check over this, is dataoffset the file-offset... can we omit it and so we KNOW the offset in mdat-relative?");
 			var CurrentTime = 0;
 			for (int sd = 0; sd < EntryCount; sd++)
 			{
