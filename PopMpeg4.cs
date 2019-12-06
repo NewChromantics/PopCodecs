@@ -598,7 +598,7 @@ namespace PopX
 
 		//	microsoft seems to have the best reference
 		//	https://msdn.microsoft.com/en-us/library/ff469287.aspx
-		static void DecodeAtom_Moof(out List<TTrack> Tracks, out TMovieHeader? MovieHeader, TAtom Moov, System.Func<long, byte[]> ReadData, int? MdatIdent)
+		static void DecodeAtom_Moof(out List<TTrack> Tracks, out TMovieHeader? MovieHeader, TAtom Moof, System.Func<long, byte[]> ReadData, int? MdatIdent)
 		{
 			var MoofTracks = new List<TTrack>();
 			MovieHeader = null;
@@ -619,11 +619,11 @@ namespace PopX
 				if (Atom.Fourcc == "traf")
 				{
 					var Track = new TTrack();
-					DecodeAtom_TrackFragment(ref Track, Atom, null, MdatIdent, TimeScale, ReadData);
+					DecodeAtom_TrackFragment(ref Track, Atom, Moof, null, MdatIdent, TimeScale, ReadData);
 					MoofTracks.Add(Track);
 				}
 			};
-			Atom.DecodeAtomChildren(EnumMoovChildAtom, Moov);
+			Atom.DecodeAtomChildren(EnumMoovChildAtom, Moof);
 			Tracks = MoofTracks;
 		}
 
@@ -650,7 +650,7 @@ namespace PopX
 		*/
 
 		//	trun
-		static List<TSample> DecodeAtom_FragmentSampleTable(TAtom Atom, float TimeScale, System.Func<long, byte[]> ReadData,int? MDatIdent)
+		static List<TSample> DecodeAtom_FragmentSampleTable(TAtom Atom,TAtom MoofAtom, float TimeScale, System.Func<long, byte[]> ReadData,int? MDatIdent)
 		{
 			var AtomData = Atom.AtomData;
 
@@ -691,7 +691,7 @@ namespace PopX
 			//	basically, start of mdat data (which we know anyway)
 			if (!DataOffsetPresent)
 				throw new System.Exception("Expected data offset to be always set");
-			var DataOffset = DataOffsetPresent ? Get32(AtomData, ref Offset) : 0;
+			var DataOffsetFromMoof = DataOffsetPresent ? Get32(AtomData, ref Offset) : 0;
 
 			System.Func<int, int> TimeToMs = (TimeUnit) =>
 			{
@@ -701,8 +701,15 @@ namespace PopX
 				return (int)TimeMs;
 			};
 
+			//	DataOffset(4 bytes): This field MUST be set.It specifies the offset from the beginning of the MoofBox field(section 2.2.4.1).
+			//	If only one TrunBox is specified, then the DataOffset field MUST be the sum of the lengths of the MoofBo
+			//	gr: we want the offset into the mdat, but we would have to ASSUME the mdat follows this moof
+			//		just for safety, we work out the file offset instead, as we know where the start of the moof is
+			var DataFileOffset = DataOffsetFromMoof + MoofAtom.FilePosition;
+
+
 			var Samples = new List<TSample>();
-			var CurrentDataStartPosition = DataOffset;
+			var CurrentDataStartPosition = DataFileOffset;
 			var CurrentTime = 0;
 			var FirstSampleFlags = 0;
 			if (FirstSampleFlagsPresent )
@@ -724,7 +731,7 @@ namespace PopX
 
 				var Sample = new TSample();
 				Sample.MDatIdent = MDatIdent.HasValue ? MDatIdent.Value : -1;
-				Sample.DataPosition = CurrentDataStartPosition;
+				Sample.DataFilePosition = CurrentDataStartPosition;
 				Sample.DataSize = SampleSize;
 				Sample.DurationMs = TimeToMs(SampleDuration);
 				Sample.IsKeyframe = false;
@@ -986,7 +993,7 @@ namespace PopX
 		}
 
 		//	traf
-		static void DecodeAtom_TrackFragment(ref TTrack Track, TAtom Trak, TAtom? MdatAtom,int? MdatIdent,float MovieTimeScale, System.Func<long, byte[]> ReadData)
+		static void DecodeAtom_TrackFragment(ref TTrack Track, TAtom Trak, TAtom Moof,TAtom? MdatAtom,int? MdatIdent,float MovieTimeScale, System.Func<long, byte[]> ReadData)
 		{
 			List<TSample> TrackSamples = null;
 			List<TTrackSampleDescription> TrackSampleDescriptions = null;
@@ -994,7 +1001,7 @@ namespace PopX
 			System.Action<TAtom> EnumTrakChild = (Atom) =>
 			{
 				if (Atom.Fourcc == "trun")
-					TrackSamples = DecodeAtom_FragmentSampleTable(Atom, MovieTimeScale, ReadData, MdatIdent);
+					TrackSamples = DecodeAtom_FragmentSampleTable(Atom, Moof, MovieTimeScale, ReadData, MdatIdent);
 			};
 
 			//	go through the track
