@@ -764,12 +764,22 @@ namespace PopX
 			//	If only one TrunBox is specified, then the DataOffset field MUST be the sum of the lengths of the MoofBo
 			//	gr: we want the offset into the mdat, but we would have to ASSUME the mdat follows this moof
 			//		just for safety, we work out the file offset instead, as we know where the start of the moof is
-			var DataFileOffset = DataOffsetFromMoof + MoofAtom.FilePosition;
+			if (Header.BaseDataOffset.HasValue )
+			{
+				var HeaderPos = Header.BaseDataOffset.Value;
+				var MoofPos = MoofAtom.FilePosition;
+				if (HeaderPos != MoofPos)
+				{
+					Debug.Log("Expected Header Pos(" + HeaderPos + ") and moof pos(" + MoofPos + ") to be the same");
+				}
+			}
+			var MoofPosition = Header.BaseDataOffset.HasValue ? Header.BaseDataOffset.Value : MoofAtom.FilePosition;
+			var DataFileOffset = MoofPosition + DataOffsetFromMoof;
 
 
 			var Samples = new List<TSample>();
 			var CurrentDataStartPosition = DataFileOffset;
-			var CurrentTime = 0;
+			var CurrentTime = Header.DecodeTime.HasValue ? (int)Header.DecodeTime.Value : 0;
 			var FirstSampleFlags = 0;
 			if (FirstSampleFlagsPresent )
 			{
