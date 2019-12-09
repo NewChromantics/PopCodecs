@@ -627,6 +627,65 @@ namespace PopX
 			Tracks = MoofTracks;
 		}
 
+
+		struct FragmentHeader
+		{
+			//	tfhd
+			public int TrackId;
+			public long? BaseDataOffset;
+			public int? SampleDescriptionIndex;
+			public int? DefaultSampleDuration;
+			public int? DefaultSampleSize;
+			public int? DefaultSampleFlags;
+			public bool? DurationIsEmpty;
+			public bool? DefaultBaseIsMoof;
+
+			public long? DecodeTime;     //	from tfdt
+		};
+
+		//	tfdt
+		static void DecodeAtom_TrackFragmentDelta(ref FragmentHeader Header, TAtom Tfdt)
+		{
+			var AtomData = Tfdt.AtomData;
+			var Offset = 0;
+			var Version = Get8(AtomData, ref Offset);
+			var Flags = Get24(AtomData, ref Offset);
+
+			Header.DecodeTime = (Version == 0) ? Get32(AtomData, ref Offset) : Get64(AtomData, ref Offset);
+		}
+
+		//	tfhd
+		static FragmentHeader DecodeAtom_TrackFragmentHeader(TAtom Tfhd, TAtom Tfdt)
+		{
+			FragmentHeader Header = new FragmentHeader();
+			var AtomData = Tfhd.AtomData;
+			var Offset = 0;
+			var Version = Get8(AtomData, ref Offset);
+			var Flags = Get24(AtomData, ref Offset);
+			Header.TrackId = Get32(AtomData, ref Offset);
+
+			System.Func<int, bool> HasFlagBit = (Bit) => { return (Flags & (1 << (int)Bit)) != 0; };
+
+			//	http://178.62.222.88/mp4parser/mp4.js
+			if (HasFlagBit(0))
+				Header.BaseDataOffset = Get64(AtomData, ref Offset);	//	unsigned
+			if (HasFlagBit(1))
+				Header.SampleDescriptionIndex = Get32(AtomData, ref Offset);
+			if (HasFlagBit(3))
+				Header.DefaultSampleDuration = Get32(AtomData, ref Offset);
+			if (HasFlagBit(4))
+				Header.DefaultSampleSize = Get32(AtomData, ref Offset);
+			if (HasFlagBit(5))
+				Header.DefaultSampleFlags = Get32(AtomData, ref Offset);
+			if (HasFlagBit(16))
+				Header.DurationIsEmpty = true;
+			if (HasFlagBit(17))
+				Header.DefaultBaseIsMoof = true;
+
+			DecodeAtom_TrackFragmentDelta(ref Header, Tfdt);
+			return Header;
+		}
+
 		//	mp4 parser and ms docs contradict themselves
 		enum TrunFlags  //	mp4 parser
 		{
@@ -650,7 +709,7 @@ namespace PopX
 		*/
 
 		//	trun
-		static List<TSample> DecodeAtom_FragmentSampleTable(TAtom Atom,TAtom MoofAtom, float TimeScale, System.Func<long, byte[]> ReadData,int? MDatIdent)
+		static List<TSample> DecodeAtom_FragmentSampleTable(TAtom Atom, FragmentHeader Header,TAtom MoofAtom, float TimeScale, System.Func<long, byte[]> ReadData,int? MDatIdent)
 		{
 			var AtomData = Atom.AtomData;
 
@@ -717,11 +776,16 @@ namespace PopX
 				FirstSampleFlags = Get32(AtomData, ref Offset);
 			}
 
+			//	when the fragments are really split up into 1sample:1dat a different box specifies values
+			var DefaultSampleDuration = Header.DefaultSampleDuration.HasValue ? Header.DefaultSampleDuration.Value : 0;
+			var DefaultSampleSize = Header.DefaultSampleSize.HasValue ? Header.DefaultSampleSize.Value : 0;
+			var DefaultSampleFlags = Header.DefaultSampleFlags.HasValue ? Header.DefaultSampleFlags.Value : 0;
+
 			for (int sd = 0; sd < EntryCount; sd++)
 			{
-				var SampleDuration = SampleDurationPresent ? Get32(AtomData, ref Offset) : 0;
-				var SampleSize = SampleSizePresent ? Get32(AtomData, ref Offset) : 0;
-				var TrunBoxSampleFlags = SampleFlagsPresent ? Get32(AtomData, ref Offset) : 0;
+				var SampleDuration = SampleDurationPresent ? Get32(AtomData, ref Offset) : DefaultSampleDuration;
+				var SampleSize = SampleSizePresent ? Get32(AtomData, ref Offset) : DefaultSampleSize;
+				var TrunBoxSampleFlags = SampleFlagsPresent ? Get32(AtomData, ref Offset) : DefaultSampleFlags;
 				var SampleCompositionTimeOffset = SampleCompositionTimeOffsetPresent ? Get32(AtomData, ref Offset) : 0;
 
 				if (SampleCompositionTimeOffsetPresent)
@@ -992,16 +1056,27 @@ namespace PopX
 			return SampleDescriptions;
 		}
 
+
 		//	traf
 		static void DecodeAtom_TrackFragment(ref TTrack Track, TAtom Trak, TAtom Moof,TAtom? MdatAtom,int? MdatIdent,float MovieTimeScale, System.Func<long, byte[]> ReadData)
 		{
 			List<TSample> TrackSamples = null;
 			List<TTrackSampleDescription> TrackSampleDescriptions = null;
 
+			TAtom? Tfhd = null;
+			TAtom? Tfdt = null;
+
 			System.Action<TAtom> EnumTrakChild = (Atom) =>
 			{
+				if (Atom.Fourcc == "tfhd")
+					Tfhd = Atom;
+				if (Atom.Fourcc == "tfdt")
+					Tfdt = Atom;
 				if (Atom.Fourcc == "trun")
-					TrackSamples = DecodeAtom_FragmentSampleTable(Atom, Moof, MovieTimeScale, ReadData, MdatIdent);
+				{
+					var Header = DecodeAtom_TrackFragmentHeader(Tfhd.Value, Tfdt.Value);
+					TrackSamples = DecodeAtom_FragmentSampleTable(Atom, Header, Moof, MovieTimeScale, ReadData, MdatIdent);
+				}
 			};
 
 			//	go through the track
