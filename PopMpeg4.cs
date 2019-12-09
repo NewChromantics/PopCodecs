@@ -611,8 +611,10 @@ namespace PopX
 				MovieHeader = null;
 			*/
 
-			//	find this scale!
-			var TimeScale = 1.0f / 10000000.0f;
+			//	gr: units are milliseconds in moof
+			//	30fps = 33.33ms = [512, 1024, 1536, 2048...]
+			//	193000ms = 2959360         
+			var TimeScale = 1.0f / 15333.4f;
 			System.Action<TAtom> EnumMoovChildAtom = (Atom) =>
 			{
 				//	if ( Atom.Fourcc == "mfhd"
