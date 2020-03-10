@@ -39,13 +39,15 @@ namespace PopX
 	{
 		public static int Get16(byte a, byte b) { return PopX.Atom.Get16(a, b); }
 		public static int Get24(byte a, byte b, byte c) { return PopX.Atom.Get24(a, b, c); }
-		public static int Get32(byte a, byte b, byte c, byte d) { return PopX.Atom.Get32(a, b, c,d); }
+		public static int Get32(byte a, byte b, byte c, byte d) { return PopX.Atom.Get32(a, b, c, d); }
 		public static long Get64(byte a, byte b, byte c, byte d, byte e, byte f, byte g, byte h) { return PopX.Atom.Get64(a, b, c,d,e,f,g,h); }
 
 		public static int Get8(byte[] Data, ref int StartIndex) { var v = Data[StartIndex];	StartIndex += 1; return v; }
 		public static int Get16(byte[] Data, ref int StartIndex) { var v = Get16(Data[StartIndex + 0], Data[StartIndex + 1]); StartIndex += 2; return v; }
-		public static int Get24(byte[] Data, ref int StartIndex) { var v = Get24(Data[StartIndex + 0], Data[StartIndex + 1], Data[StartIndex + 2]);	StartIndex += 3;	return v; }
+		public static int Get24(byte[] Data, ref int StartIndex) { var v = Get24(Data[StartIndex + 0], Data[StartIndex + 1], Data[StartIndex + 2]); StartIndex += 3; return v; }
+		public static int Get24(byte[] Data)					{ int StartIndex = 0; return Get24(Data, ref StartIndex); }
 		public static int Get32(byte[] Data, ref int StartIndex) { var v = Get32(Data[StartIndex + 0], Data[StartIndex + 1], Data[StartIndex + 2], Data[StartIndex + 3]); StartIndex += 4; return v; }
+		public static int Get32(byte[] Data)					{ int StartIndex = 0; return Get32(Data, ref StartIndex); }
 		public static long Get64(byte[] Data, ref int StartIndex) { var v = Get64(Data[StartIndex + 0], Data[StartIndex + 1], Data[StartIndex + 2], Data[StartIndex + 3], Data[StartIndex + 4], Data[StartIndex + 5], Data[StartIndex + 6], Data[StartIndex + 7]); StartIndex += 8; return v; }
 		public static int Get32_BigEndian(byte[] Data, ref int StartIndex) { var v = Get32(Data[StartIndex + 3], Data[StartIndex + 2], Data[StartIndex + 1], Data[StartIndex + 0]); StartIndex += 4; return v; }
 
