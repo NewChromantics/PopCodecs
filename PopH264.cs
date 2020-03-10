@@ -43,7 +43,11 @@ namespace PopX
 
 		public struct AvccHeader
 		{
+			public Profile Profile { get { return (Profile)AvccProfile; } }
+			public float Level { get { return AvccLevelMajor + (AvccLevelMinor / 10); } }
 			public int AvccProfile;
+			public int AvccLevelMajor;
+			public int AvccLevelMinor;
 			public int NaluLengthMinusOne;
 			public List<byte[]> SPSs;
 			public List<byte[]> PPSs;
@@ -60,10 +64,15 @@ namespace PopX
 				}
 			}
 
-			public AvccHeader(int AvccProfile,int NaluLengthMinusOne)
+			public AvccHeader(int AvccProfile,int Level8,int NaluLengthMinusOne)
 			{
 				this.AvccProfile = AvccProfile;
 				this.NaluLengthMinusOne = NaluLengthMinusOne;
+
+				//	level 3.0 is represented as the decimal 30
+				this.AvccLevelMajor = Level8 / 10;
+				this.AvccLevelMinor = Level8 % 10;
+
 				SPSs = new List<byte[]>();
 				PPSs = new List<byte[]>();
 			}
@@ -106,13 +115,13 @@ namespace PopX
 			/*var Version =*/ Get8(Data,ref Offset);
 			var Profile = Get8(Data, ref Offset);
 			/*var Compatibility =*/ Get8(Data, ref Offset);
-			/*var Level =*/ Get8(Data, ref Offset);
+			var Level8 = Get8(Data, ref Offset);
 			var ReservedAndNaluLengthMinusOne = Get8(Data, ref Offset);
 			var ReservedAndSpsCount = Get8(Data, ref Offset);
 			var NaluLengthMinusOne = ReservedAndNaluLengthMinusOne & ((1 << 2) - 1);
 			var SpsCount = ReservedAndSpsCount & ((1 << 5) - 1);
 
-			var Header = new AvccHeader(Profile, NaluLengthMinusOne);
+			var Header = new AvccHeader(Profile, Level8, NaluLengthMinusOne);
 
 			for (int i = 0; i < SpsCount;	i++ )
 			{
@@ -129,6 +138,27 @@ namespace PopX
 				var Pps = GetN(Data, PpsSize, ref Offset);
 				Header.PPSs.Add(Pps);
 			}
+
+			return Header;
+		}
+
+		//	like ParseAvccHeader but decodes the minimum to get profile & level
+		public static AvccHeader ParseAvccProfile(byte[] Data)
+		{
+			//	https://stackoverflow.com/a/24890903/355753
+			int Offset = 0;
+			/*var Version =*/
+			Get8(Data, ref Offset);
+			var Profile = Get8(Data, ref Offset);
+			/*var Compatibility =*/
+			Get8(Data, ref Offset);
+			var Level8 = Get8(Data, ref Offset);
+			var ReservedAndNaluLengthMinusOne = Get8(Data, ref Offset);
+			var ReservedAndSpsCount = Get8(Data, ref Offset);
+			var NaluLengthMinusOne = ReservedAndNaluLengthMinusOne & ((1 << 2) - 1);
+			var SpsCount = ReservedAndSpsCount & ((1 << 5) - 1);
+
+			var Header = new AvccHeader(Profile, Level8, NaluLengthMinusOne);
 
 			return Header;
 		}
@@ -195,7 +225,7 @@ namespace PopX
 			SplitPacket_Avcc(Header, Packet, EnumPacket);
 		}
 
-		static NaluType GetNaluType(byte Byte)
+		public static NaluType GetNaluType(byte Byte)
 		{
 			var nt = Byte & 0x1f;
 			return (NaluType)nt;
@@ -210,7 +240,7 @@ namespace PopX
 			return (byte)NaluTypeByte;
 		}
 
-		static int GetNaluHeaderSize(byte[] Packet)
+		static public int GetNaluHeaderSize(byte[] Packet)
 		{
 			var Format = GetNaluFormat(Packet);
 			switch(Format)
