@@ -62,6 +62,13 @@ namespace PopX
 			public short EthernetType;
 		}
 
+		public static short ReverseBytes(short Value)
+		{
+			var a = Value & 0x00ff;
+			var b = Value & 0xff00;
+			return (short)((a << 8) | (b >> 8));
+		}
+
 		public struct Ipv4Header // 20 bytes
 		{
 			public const byte Protocol_Udp = 17;
@@ -71,7 +78,8 @@ namespace PopX
 
 			public byte VersionNumber4_HeaderLength4; //	4 bits, 4bits
 			public byte TypeOfService;
-			public short TotalLength;
+			public short TotalLengthLittleEndian;
+			public short TotalLength	{ get { return ReverseBytes(TotalLengthLittleEndian); } }
 			public short Identification;
 			public short Flags4_FragmentOffset12;
 			public byte TimeToLive;
@@ -85,7 +93,8 @@ namespace PopX
 		{
 			public short SourcePort;
 			public short DestinationPort;
-			public short Length;
+			public short Length { get { return ReverseBytes(LengthLittleEndian); } }
+			public short LengthLittleEndian;
 			public short Checksum;
 		}
 
@@ -129,6 +138,9 @@ namespace PopX
 				return SubData;
 			};
 
+			var Ipv4Size = 0;
+			var EthernetSize = 0;
+
 			if (GlobalHeader.NetworkLinkType == GlobalHeader.NetworkLinkType_Ethernet )
 			{
 				var EthernetHeader = GetStruct<EthernetHeader>(ReadPacketData);
@@ -139,14 +151,19 @@ namespace PopX
 					if (Ipv4Header.VersionNumber != 4)
 						throw new System.Exception("IPV4 packet header version not 4, is " + Ipv4Header.VersionNumber);
 
-					//	length includes IPV4 header
-					var ExtendedData = Ipv4Header.HeaderLength - Marshal.SizeOf(Ipv4Header);
-					var Header = ReadPacketData(ExtendedData);
+					Ipv4Size = Ipv4Header.TotalLength;
+
+					//	length includes IPV4 header, but there may be extra data not in the struct, so pop it off
+					var ExtendedHeaderLength = Ipv4Header.HeaderLength - Marshal.SizeOf(Ipv4Header);
+					if (ExtendedHeaderLength > 0)
+					{
+						var ExtendedHeaderData = ReadPacketData(ExtendedHeaderLength);
+					}
 
 					if ( Ipv4Header.Protocol == Ipv4Header.Protocol_Udp )
 					{
 						var UdpHeader = GetStruct<UdpHeader>(ReadPacketData);
-
+						EthernetSize = UdpHeader.Length;
 					}
 				}
 			}
