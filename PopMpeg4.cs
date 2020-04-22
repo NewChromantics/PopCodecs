@@ -24,6 +24,15 @@ namespace PopX
 			ParentArray.CopyTo((int)Start, ChildArray, (int)0, (int)Count);
 			return ChildArray;
 		}
+
+		static public byte[] JoinArray(this System.Array ArrayA,System.Array ArrayB)
+		{
+			var NewArray = new byte[ArrayA.Length + ArrayB.Length];
+			System.Array.Copy(ArrayA, 0, NewArray, 0, ArrayA.Length);
+			System.Array.Copy(ArrayB, 0, NewArray, ArrayA.Length, ArrayB.Length);
+			return NewArray;
+		}
+
 	}
 }
 
