@@ -557,8 +557,6 @@ namespace PopX
 				DecodeAtom_Moof(out MoofTracks, out Header, MoofAtom, ReadData, MdatIdent);
 
 				EnumTracks(MoofTracks);
-
-				throw new System.Exception("Check over moof tracks");
 				/*
 				//	todo: change accessor/give accessor
 				var Mdat = MdatAtoms[MdatIdent];
@@ -611,7 +609,7 @@ namespace PopX
 
 		//	microsoft seems to have the best reference
 		//	https://msdn.microsoft.com/en-us/library/ff469287.aspx
-		static void DecodeAtom_Moof(out List<TTrack> Tracks, out TMovieHeader? MovieHeader, TAtom Moov, System.Func<long, byte[]> ReadData, int? MdatIdent)
+		static void DecodeAtom_Moof(out List<TTrack> Tracks, out TMovieHeader? MovieHeader, TAtom Moof, System.Func<long, byte[]> ReadData, int? MdatIdent)
 		{
 			var MoofTracks = new List<TTrack>();
 			MovieHeader = null;
@@ -624,23 +622,107 @@ namespace PopX
 				MovieHeader = null;
 			*/
 
-			//	find this scale!
-			var TimeScale = 1.0f / 10000000.0f;
+			//	gr: units are milliseconds in moof
+			//	30fps = 33.33ms = [512, 1024, 1536, 2048...]
+			//	193000ms = 2959360         
+			var TimeScale = 1.0f / 15333.4f;
 			System.Action<TAtom> EnumMoovChildAtom = (Atom) =>
 			{
+				//	if ( Atom.Fourcc == "mfhd"
 				if (Atom.Fourcc == "traf")
 				{
 					var Track = new TTrack();
-					DecodeAtom_TrackFragment(ref Track, Atom, null, MdatIdent, TimeScale, ReadData);
+					DecodeAtom_TrackFragment(ref Track, Atom, Moof, null, MdatIdent, TimeScale, ReadData);
 					MoofTracks.Add(Track);
 				}
 			};
-			Atom.DecodeAtomChildren(EnumMoovChildAtom, Moov);
+			Atom.DecodeAtomChildren(EnumMoovChildAtom, Moof);
 			Tracks = MoofTracks;
 		}
 
+
+		struct FragmentHeader
+		{
+			//	tfhd
+			public int TrackId;
+			public long? BaseDataOffset;
+			public int? SampleDescriptionIndex;
+			public int? DefaultSampleDuration;
+			public int? DefaultSampleSize;
+			public int? DefaultSampleFlags;
+			public bool? DurationIsEmpty;
+			public bool? DefaultBaseIsMoof;
+
+			public long? DecodeTime;     //	from tfdt
+		};
+
+		//	tfdt
+		static void DecodeAtom_TrackFragmentDelta(ref FragmentHeader Header, TAtom Tfdt)
+		{
+			var AtomData = Tfdt.AtomData;
+			var Offset = 0;
+			var Version = Get8(AtomData, ref Offset);
+			var Flags = Get24(AtomData, ref Offset);
+
+			Header.DecodeTime = (Version == 0) ? Get32(AtomData, ref Offset) : Get64(AtomData, ref Offset);
+		}
+
+		//	tfhd
+		static FragmentHeader DecodeAtom_TrackFragmentHeader(TAtom Tfhd, TAtom Tfdt)
+		{
+			FragmentHeader Header = new FragmentHeader();
+			var AtomData = Tfhd.AtomData;
+			var Offset = 0;
+			var Version = Get8(AtomData, ref Offset);
+			var Flags = Get24(AtomData, ref Offset);
+			Header.TrackId = Get32(AtomData, ref Offset);
+
+			System.Func<int, bool> HasFlagBit = (Bit) => { return (Flags & (1 << (int)Bit)) != 0; };
+
+			//	http://178.62.222.88/mp4parser/mp4.js
+			if (HasFlagBit(0))
+				Header.BaseDataOffset = Get64(AtomData, ref Offset);	//	unsigned
+			if (HasFlagBit(1))
+				Header.SampleDescriptionIndex = Get32(AtomData, ref Offset);
+			if (HasFlagBit(3))
+				Header.DefaultSampleDuration = Get32(AtomData, ref Offset);
+			if (HasFlagBit(4))
+				Header.DefaultSampleSize = Get32(AtomData, ref Offset);
+			if (HasFlagBit(5))
+				Header.DefaultSampleFlags = Get32(AtomData, ref Offset);
+			if (HasFlagBit(16))
+				Header.DurationIsEmpty = true;
+			if (HasFlagBit(17))
+				Header.DefaultBaseIsMoof = true;
+
+			DecodeAtom_TrackFragmentDelta(ref Header, Tfdt);
+			return Header;
+		}
+
+		//	mp4 parser and ms docs contradict themselves
+		enum TrunFlags  //	mp4 parser
+		{
+			DataOffsetPresent = 0,
+			FirstSampleFlagsPresent = 2,
+			SampleDurationPresent = 8,
+			SampleSizePresent = 9,
+			SampleFlagsPresent = 10,
+			SampleCompositionTimeOffsetPresent = 11
+		}
+		/*
+		enum TrunFlags  //	ms (matching hololens stream)
+		{
+			DataOffsetPresent = 0,
+			FirstSampleFlagsPresent = 3,
+			SampleDurationPresent = 9,
+			SampleSizePresent = 10,
+			SampleFlagsPresent = 11,
+			SampleCompositionTimeOffsetPresent = 12
+		};
+		*/
+
 		//	trun
-		static List<TSample> DecodeAtom_FragmentSampleTable(TAtom Atom, float TimeScale, System.Func<long, byte[]> ReadData,int? MDatIdent)
+		static List<TSample> DecodeAtom_FragmentSampleTable(TAtom Atom, FragmentHeader Header,TAtom MoofAtom, float TimeScale, System.Func<long, byte[]> ReadData,int? MDatIdent)
 		{
 			var AtomData = Atom.AtomData;
 
@@ -649,21 +731,31 @@ namespace PopX
 			//	https://stackoverflow.com/a/14549784/355753
 			//var Version = AtomData[8];
 			var Offset = 0;
-			var Flags = Get32(AtomData, ref Offset);
+			var Version = Get8(AtomData, ref Offset);
+			var Flags = Get24(AtomData, ref Offset);
 			var EntryCount = Get32(AtomData, ref Offset);
+
+
+			//	gr; with a fragmented mp4 the headers were incorrect (bad sample sizes, mismatch from mp4parser's output)
+			//	ffmpeg -i cat_baseline.mp4 -c copy -movflags frag_keyframe+empty_moov cat_baseline_fragment.mp4
+			//	http://178.62.222.88/mp4parser/mp4.js
+			//	so trying this version
+			//	VERSION8
+			//	FLAGS24
+			//	SAMPLECOUNT32
 
 			//	https://msdn.microsoft.com/en-us/library/ff469478.aspx
 			//	the docs on which flags are which are very confusing (they list either 25 bits or 114 or I don't know what)
 			//	0x0800 is composition|size|duration
 			//	from a stackoverflow post, 0x0300 is size|duration
 			//	0x0001 is offset from http://mp4parser.com/
-			System.Func<int, bool> IsFlagBit = (Bit) => { return (Flags & (1 << Bit)) != 0; };
-			var SampleSizePresent = IsFlagBit(8);
-			var SampleDurationPresent = IsFlagBit(9);
-			var SampleFlagsPresent = IsFlagBit(10);
-			var SampleCompositionTimeOffsetPresent = IsFlagBit(11);
-			var FirstSampleFlagsPresent = IsFlagBit(3);
-			var DataOffsetPresent = IsFlagBit(0);
+			System.Func<TrunFlags, bool> IsFlagBit = (Bit) => { return (Flags & (1 << (int)Bit)) != 0; };
+			var SampleSizePresent = IsFlagBit(TrunFlags.SampleSizePresent);
+			var SampleDurationPresent = IsFlagBit(TrunFlags.SampleDurationPresent);
+			var SampleFlagsPresent = IsFlagBit(TrunFlags.SampleFlagsPresent);
+			var SampleCompositionTimeOffsetPresent = IsFlagBit(TrunFlags.SampleCompositionTimeOffsetPresent);
+			var FirstSampleFlagsPresent = IsFlagBit(TrunFlags.FirstSampleFlagsPresent);
+			var DataOffsetPresent = IsFlagBit(TrunFlags.DataOffsetPresent);
 
 			//	This field MUST be set.It specifies the offset from the beginning of the MoofBox field(section 2.2.4.1).
 			//	gr:... to what?
@@ -671,7 +763,7 @@ namespace PopX
 			//	basically, start of mdat data (which we know anyway)
 			if (!DataOffsetPresent)
 				throw new System.Exception("Expected data offset to be always set");
-			var DataOffset = DataOffsetPresent ? Get32(AtomData, ref Offset) : 0;
+			var DataOffsetFromMoof = DataOffsetPresent ? Get32(AtomData, ref Offset) : 0;
 
 			System.Func<int, int> TimeToMs = (TimeUnit) =>
 			{
@@ -681,18 +773,42 @@ namespace PopX
 				return (int)TimeMs;
 			};
 
+			//	DataOffset(4 bytes): This field MUST be set.It specifies the offset from the beginning of the MoofBox field(section 2.2.4.1).
+			//	If only one TrunBox is specified, then the DataOffset field MUST be the sum of the lengths of the MoofBo
+			//	gr: we want the offset into the mdat, but we would have to ASSUME the mdat follows this moof
+			//		just for safety, we work out the file offset instead, as we know where the start of the moof is
+			if (Header.BaseDataOffset.HasValue )
+			{
+				var HeaderPos = Header.BaseDataOffset.Value;
+				var MoofPos = MoofAtom.FilePosition;
+				if (HeaderPos != MoofPos)
+				{
+					Debug.Log("Expected Header Pos(" + HeaderPos + ") and moof pos(" + MoofPos + ") to be the same");
+				}
+			}
+			var MoofPosition = Header.BaseDataOffset.HasValue ? Header.BaseDataOffset.Value : MoofAtom.FilePosition;
+			var DataFileOffset = MoofPosition + DataOffsetFromMoof;
+
+
 			var Samples = new List<TSample>();
-			var CurrentDataStartPosition = DataOffset;
-			throw new System.Exception("Check over this, is dataoffset the file-offset... can we omit it and so we KNOW the offset in mdat-relative?");
-			var CurrentTime = 0;
+			var CurrentDataStartPosition = DataFileOffset;
+			var CurrentTime = Header.DecodeTime.HasValue ? (int)Header.DecodeTime.Value : 0;
+			var FirstSampleFlags = 0;
+			if (FirstSampleFlagsPresent )
+			{
+				FirstSampleFlags = Get32(AtomData, ref Offset);
+			}
+
+			//	when the fragments are really split up into 1sample:1dat a different box specifies values
+			var DefaultSampleDuration = Header.DefaultSampleDuration.HasValue ? Header.DefaultSampleDuration.Value : 0;
+			var DefaultSampleSize = Header.DefaultSampleSize.HasValue ? Header.DefaultSampleSize.Value : 0;
+			var DefaultSampleFlags = Header.DefaultSampleFlags.HasValue ? Header.DefaultSampleFlags.Value : 0;
+
 			for (int sd = 0; sd < EntryCount; sd++)
 			{
-				if (FirstSampleFlagsPresent)
-					throw new System.Exception("Unhandled case: FirstSampleFlagsPresent");
-
-				var SampleDuration = SampleDurationPresent ? Get32(AtomData, ref Offset) : 0;
-				var SampleSize = SampleSizePresent ? Get32(AtomData, ref Offset) : 0;
-				var TrunBoxSampleFlags = SampleFlagsPresent ? Get32(AtomData, ref Offset) : 0;
+				var SampleDuration = SampleDurationPresent ? Get32(AtomData, ref Offset) : DefaultSampleDuration;
+				var SampleSize = SampleSizePresent ? Get32(AtomData, ref Offset) : DefaultSampleSize;
+				var TrunBoxSampleFlags = SampleFlagsPresent ? Get32(AtomData, ref Offset) : DefaultSampleFlags;
 				var SampleCompositionTimeOffset = SampleCompositionTimeOffsetPresent ? Get32(AtomData, ref Offset) : 0;
 
 				if (SampleCompositionTimeOffsetPresent)
@@ -702,7 +818,7 @@ namespace PopX
 
 				var Sample = new TSample();
 				Sample.MDatIdent = MDatIdent.HasValue ? MDatIdent.Value : -1;
-				Sample.DataPosition = CurrentDataStartPosition;
+				Sample.DataFilePosition = CurrentDataStartPosition;
 				Sample.DataSize = SampleSize;
 				Sample.DurationMs = TimeToMs(SampleDuration);
 				Sample.IsKeyframe = false;
@@ -963,16 +1079,27 @@ namespace PopX
 			return SampleDescriptions;
 		}
 
+
 		//	traf
-		static void DecodeAtom_TrackFragment(ref TTrack Track, TAtom Trak, TAtom? MdatAtom,int? MdatIdent,float MovieTimeScale, System.Func<long, byte[]> ReadData)
+		static void DecodeAtom_TrackFragment(ref TTrack Track, TAtom Trak, TAtom Moof,TAtom? MdatAtom,int? MdatIdent,float MovieTimeScale, System.Func<long, byte[]> ReadData)
 		{
 			List<TSample> TrackSamples = null;
 			List<TTrackSampleDescription> TrackSampleDescriptions = null;
 
+			TAtom? Tfhd = null;
+			TAtom? Tfdt = null;
+
 			System.Action<TAtom> EnumTrakChild = (Atom) =>
 			{
+				if (Atom.Fourcc == "tfhd")
+					Tfhd = Atom;
+				if (Atom.Fourcc == "tfdt")
+					Tfdt = Atom;
 				if (Atom.Fourcc == "trun")
-					TrackSamples = DecodeAtom_FragmentSampleTable(Atom, MovieTimeScale, ReadData, MdatIdent);
+				{
+					var Header = DecodeAtom_TrackFragmentHeader(Tfhd.Value, Tfdt.Value);
+					TrackSamples = DecodeAtom_FragmentSampleTable(Atom, Header, Moof, MovieTimeScale, ReadData, MdatIdent);
+				}
 			};
 
 			//	go through the track
