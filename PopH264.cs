@@ -79,12 +79,28 @@ namespace PopX
 
 		};
 
+		public static NaluFormat? IsAnnexbNalu3or4(byte[] Data,int FirstIndex=0)
+		{
+			if (Data.Length < FirstIndex + 3)
+				return null;
+
+			var a = Data[FirstIndex + 0];
+			var b = Data[FirstIndex + 1];
+			var c = Data[FirstIndex + 2];
+			var d = (Data.Length >= FirstIndex + 4) ? Data[FirstIndex + 3] : 99;
+
+			if (a == 0 && b == 0 && c == 1)
+				return NaluFormat.Annexb3;
+			if (a == 0 && b == 0 && c == 0 && d == 1)
+				return NaluFormat.Annexb4;
+			return null;
+		}
+
 		public static NaluFormat GetNaluFormat(byte[] Data)
 		{
-			if (Data[0] == 0 && Data[1] == 0 && Data[2] == 1)
-				return NaluFormat.Annexb3;
-			if (Data[0] == 0 && Data[1] == 0 && Data[2] == 0 && Data[3] == 1)
-				return NaluFormat.Annexb4;
+			var Annexb = IsAnnexbNalu3or4(Data);
+			if (Annexb.HasValue)
+				return Annexb.Value;
 
 			var Size1 = Data[0];
 			var Size2 = (Data[0]<<0) | (Data[1] << 8);
@@ -183,7 +199,7 @@ namespace PopX
 			}
 		}
 
-		static void SplitPacket_Avcc(AvccHeader Header, byte[] Packet,System.Action<byte[]> EnumPacket)
+		public static void SplitPacket_Avcc(AvccHeader Header, byte[] Packet,System.Action<byte[]> EnumPacket)
 		{
 			int Offset = 0;
 			while ( Offset < Packet.Length )
@@ -193,9 +209,42 @@ namespace PopX
 				var Data = GetN(Packet, Length, ref Offset);
 				EnumPacket(Data);
 			}
-
 		}
 
+		public static int? GetNextNaluStart(byte[] Data,int SearchFrom)
+		{
+			for ( int i=SearchFrom;	i<Data.Length-3;	i++ )
+			{
+				var Format = IsAnnexbNalu3or4(Data, i);
+				if (Format.HasValue)
+					return i;
+			}
+			return null;
+		}
+
+		public static void SplitPacket_Avcc(byte[] Packet, System.Action<byte[]> EnumPacket)
+		{
+			//	we're expecting one at the start, but maybe its not at 0
+			var FirstStart = GetNextNaluStart(Packet, 0);
+			if (!FirstStart.HasValue)
+			{
+				//	expecting one, so throw here?
+				return;
+			}
+
+			int Start = FirstStart.Value;
+
+			while (Start < Packet.Length)
+			{
+				var NextStart = GetNextNaluStart(Packet, Start+3);
+				if (!NextStart.HasValue)
+					NextStart = Packet.Length;
+
+				var Length = NextStart.Value - Start;
+				var Data = GetN(Packet, Length, ref Start);
+				EnumPacket(Data);
+			}
+		}
 
 		public static void AvccToAnnexb4(AvccHeader Header,byte[] Packet,System.Action<byte[]> EnumAnnexBPacket)
 		{
